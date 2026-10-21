@@ -50,6 +50,8 @@ MongoDB Atlas
 
 The Student sign-in page includes a **Request access** form. Submissions are stored in the administrator's **User management → Student registration requests** queue. When SMTP and `ADMIN_NOTIFICATION_EMAIL` are configured, the service emails the administrator; if email is unavailable, the saved request remains visible in that queue and the applicant is told the email was not sent. Approving a request creates a student account with no password; the administrator must then use **Send invitation** to deliver the one-time password setup link. Declining a request does not create an account.
 
+To add the fictional demonstration records to the configured production database, sign in as administrator, open **User management**, choose **Add demo data**, and confirm. This admin-only API action runs on Render and uses the Render `MONGODB_URI`/`MONGODB_DATABASE` connection to Atlas; it does not use the developer workstation's local `.env` database. It inserts missing demo profiles, courses, assignments, and announcements without overwriting existing records. Passwords remain unset, so imported demo accounts cannot sign in until credentials are configured. `.example.test` addresses are non-deliverable. The import is safe to repeat.
+
 The `.env.example` file contains blank secret/identity fields by design. For local use only, copy it to `.env` and use a local MongoDB URI. For production, set secrets only in the hosting provider's secret manager. Never copy a production `.env` into the repository.
 
 ### MongoDB Atlas authentication failure

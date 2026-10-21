@@ -588,4 +588,21 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   } })).status, 200);
   assert.equal((await request('/support', { cookie: adminLogin.cookie })).body.find((ticket) => ticket.id === supportTicket.body.id).status, 'in_progress');
   assert.equal((await request('/audit', { cookie: adminLogin.cookie })).status, 200);
+  assert.equal((await request('/admin/demo-data', { method: 'POST' })).status, 401);
+  assert.equal((await request('/admin/demo-data', { method: 'POST', cookie: studentCookie })).status, 403);
+  const demoImport = await request('/admin/demo-data', { method: 'POST', cookie: adminLogin.cookie });
+  assert.equal(demoImport.status, 200);
+  assert.deepEqual(
+    { courses: demoImport.body.courses, tasks: demoImport.body.tasks, announcements: demoImport.body.announcements },
+    { courses: 3, tasks: 16, announcements: 2 }
+  );
+  const demoUsers = await request('/users', { cookie: adminLogin.cookie });
+  const mastan = demoUsers.body.find((person) => person.email === 'mastan.demo@example.test');
+  assert.equal(mastan.role, 'student');
+  assert.equal(mastan.account_status, 'setup required');
+  assert.equal('password_hash' in mastan, false);
+  assert.equal((await request('/tasks', { cookie: adminLogin.cookie })).body.filter((task) => task.demo).length, 16);
+  const repeatDemoImport = await request('/admin/demo-data', { method: 'POST', cookie: adminLogin.cookie });
+  assert.equal(repeatDemoImport.status, 200);
+  assert.equal(repeatDemoImport.body.alreadyPresent, true);
 });

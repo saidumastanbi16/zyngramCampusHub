@@ -736,6 +736,7 @@ function UserManagement({ notify }) {
   const [users, setUsers] = useState([]);
   const [registrationRequests, setRegistrationRequests] = useState([]);
   const [open, setOpen] = useState(false);
+  const [importingDemo, setImportingDemo] = useState(false);
   const [error, setError] = useState('');
   const [invitation, setInvitation] = useState(null);
   const [invitingId, setInvitingId] = useState('');
@@ -778,7 +779,18 @@ function UserManagement({ notify }) {
         : `Registration request from ${request.name} was declined.`);
     } catch (e) { notify(e.message); }
   }
-  return <div className="page-content"><Heading eyebrow="CAMPUS OPERATIONS" title="People on campus." description="Review student access requests, manage campus accounts, and send secure credential setup invitations." action={<button className="button-primary" onClick={() => setOpen(true)}><Plus size={15} /> Add account</button>} />
+  async function importDemoData() {
+    if (!window.confirm('Add fictional demo student/trainer profiles, courses, assignments, and announcements? Existing accounts and records will not be overwritten. New demo accounts will have no password and cannot sign in until credentials are set.')) return;
+    setImportingDemo(true);
+    try {
+      const result = await api('/admin/demo-data', { method: 'POST' });
+      await load();
+      notify(result.alreadyPresent
+        ? 'Demo dataset is already present; no records were changed.'
+        : `Demo dataset added: ${result.users} accounts, ${result.courses} courses, ${result.tasks} assignments, ${result.announcements} announcements.`);
+    } catch (e) { notify(e.message); } finally { setImportingDemo(false); }
+  }
+  return <div className="page-content"><Heading eyebrow="CAMPUS OPERATIONS" title="People on campus." description="Review student access requests, manage campus accounts, and send secure credential setup invitations." action={<><button className="button-secondary" disabled={importingDemo} onClick={importDemoData}>{importingDemo ? 'Adding demo data…' : 'Add demo data'}</button><button className="button-primary" onClick={() => setOpen(true)}><Plus size={15} /> Add account</button></>} />
     {invitation && <section className="success-message invitation-link" role="status"><span>Development-only setup link for {invitation.email}:</span><a href={invitation.url}>{invitation.url}</a><button className="button-secondary" onClick={() => navigator.clipboard.writeText(invitation.url).then(() => notify('Invitation link copied.')).catch(() => notify('Copy failed. Select and copy the link manually.'))}>Copy link</button></section>}
     <div className="section-title-row"><div><h2>Student registration requests</h2><p>Review new student applications. Approved students need an invitation to set their password.</p></div><Badge tone={registrationRequests.filter((request) => request.status === 'pending').length ? 'review' : 'subtle'}>{registrationRequests.filter((request) => request.status === 'pending').length} pending</Badge></div>
     <div className="panel user-management"><div className="user-table-row user-table-head"><span>APPLICANT</span><span>COHORT</span><span>REQUESTED</span><span>REVIEW</span></div>{registrationRequests.map((request) => <div className="user-table-row" key={request.id}><span className="managed-user"><Avatar initials={request.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()} /><span><b>{request.name}</b><small>{request.email}</small></span></span><span>{request.cohort}</span><span>{new Date(request.created_at).toLocaleDateString()}</span><span>{request.status === 'pending' ? <div className="registration-actions"><button className="text-link" onClick={() => reviewRegistration(request, 'approved')}>Approve</button><button className="text-link" onClick={() => reviewRegistration(request, 'rejected')}>Decline</button></div> : <Badge tone={request.status === 'approved' ? 'positive' : 'subtle'}>{request.status}</Badge>}</span></div>)}{registrationRequests.length === 0 && <div className="empty-state">No student registration requests yet.</div>}</div>

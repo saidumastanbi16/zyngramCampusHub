@@ -7,6 +7,7 @@ import { Binary } from 'mongodb';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { client, databasePromise } from './db.js';
+import { provisionDemoData } from './demo-data.js';
 import { invitationMailConfigured, sendInvitationEmail, sendStudentRegistrationNotification } from './mailer.js';
 
 const app = express();
@@ -1248,6 +1249,11 @@ app.post('/api/announcements', requireUser, requireRoles('trainer', 'coordinator
   res.status(201).json(toApiDocument(notice));
 });
 app.get('/api/profile', requireUser, async (req, res) => res.json({ user: req.user, courses: await courses.countDocuments() }));
+app.post('/api/admin/demo-data', requireUser, requireRoles('admin'), async (req, res) => {
+  const result = await provisionDemoData(db, req.user._id);
+  if (!result.alreadyPresent) await recordAudit(req.user._id, 'demo.dataset.import', 'demo_dataset', 'campus-demo-v1');
+  res.json({ ok: true, ...result });
+});
 app.post('/api/student-registration-requests', async (req, res) => {
   const parsed = z.object({
     name: z.string().trim().min(2).max(100),
