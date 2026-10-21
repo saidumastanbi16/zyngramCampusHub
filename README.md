@@ -64,7 +64,7 @@ The repository includes `render.yaml` for a Render web service. To deploy:
 4. Deploy and verify `/api/health`. On an empty production database, the app creates only the administrator account and does not seed demo users or sample campus records.
 5. After the first successful deploy, remove `BOOTSTRAP_ADMIN_PASSWORD` from Render's environment settings. Its salted scrypt hash remains in MongoDB.
 
-If you also publish the frontend on Netlify, set its publish directory to `frontend/dist`. The included Netlify rewrite forwards `/api/*` requests to the Render service; update `frontend/public/_redirects` if your Render service uses a different hostname. Set Render's `APP_BASE_URL` to the public frontend URL used for invitation links.
+If you also publish the frontend on Netlify, set its publish directory to `frontend/dist`. The included Netlify rewrite forwards `/api/*` requests to `https://zyngramcampushub.onrender.com`; update `frontend/public/_redirects` if your Render service uses a different hostname. Set Render's `APP_BASE_URL` to the public frontend URL used for invitation links.
 
 If Render logs report `MongoServerError: bad auth : Authentication failed`, update `MONGODB_URI` in the Render service settings with the correct Atlas **database user** credentials (not your Atlas website login). Reset the database user's password in Atlas if needed, percent-encode reserved characters in the URI username or password, save the setting, and redeploy. Never paste the connection string into logs, chat, or source control. See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md#mongodb-atlas-authentication-failure) for more checks.
 

@@ -2,7 +2,7 @@
 
 ## Deployment status
 
-**Live deployment: partially verified.** As checked on 2026-10-21, the Netlify frontend at `https://zyngramcampushub.netlify.app` loaded, but `/api/health` returned 404. The Render API at `https://zyngram-campus-hub.onrender.com/api/health` returned `{"status":"ok","app":"Zyngram Campus Hub demo"}`. Earlier supplied Render logs showed Atlas authentication failure; the current health response does not independently verify database-backed workflows. Deploy the Netlify API rewrite and verify the application's API flows before reporting the full deployment as operational.
+**Live deployment: partially verified.** As checked on 2026-10-21, the Render service at `https://zyngramcampushub.onrender.com/api/health` returned `{"status":"ok","database":"mongodb"}`. Netlify had been returning an unrelated demo response because its rewrite targeted a different Render hostname. The rewrite now targets the actual service hostname; publish and verify the latest Netlify deploy and application flows before reporting the full deployment as operational.
 
 ## Architecture
 
@@ -63,7 +63,7 @@ If credentials are confirmed but the error changes to a connection timeout, chec
 
 ### Netlify frontend with Render API
 
-This app's frontend calls `/api/*` on its own origin. When publishing `frontend/dist` on Netlify, `frontend/public/_redirects` proxies those requests to the Render service at `https://zyngram-campus-hub.onrender.com`. If the Render hostname differs, update that redirect target before deploying. Set Render's `APP_BASE_URL` to the Netlify public URL if Netlify is the user-facing site so invitation links open the correct frontend. The Netlify frontend cannot pass its health check while the Render API is unavailable.
+This app's frontend calls `/api/*` on its own origin. When publishing `frontend/dist` on Netlify, `frontend/public/_redirects` proxies those requests to the Render service at `https://zyngramcampushub.onrender.com`. If the Render hostname differs, update that redirect target before deploying. Set Render's `APP_BASE_URL` to the Netlify public URL if Netlify is the user-facing site so invitation links open the correct frontend. The Netlify frontend cannot pass its health check while the Render API is unavailable.
 
 ## Database initialization, persistence, and restart
 
