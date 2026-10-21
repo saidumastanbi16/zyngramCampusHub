@@ -1,0 +1,40 @@
+{
+  "name": "zyngram-campus-hub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node backend/scripts/ensure-dev-secret.js",
+    "dev": "concurrently -k \"npm:server:dev\" \"npm:client:dev\"",
+    "server:dev": "node --watch backend/server/index.js",
+    "client:dev": "vite --config frontend/vite.config.js --host 0.0.0.0",
+    "build": "vite build --config frontend/vite.config.js",
+    "start": "node backend/server/index.js",
+    "seed": "node backend/scripts/seed.js",
+    "set-password": "node backend/scripts/set-password.js",
+    "create-demo-students": "node backend/scripts/create-demo-students.js",
+    "assign-student-work": "node backend/scripts/assign-student-work.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.0.3",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^0.468.0",
+    "mongodb": "^6.20.0",
+    "multer": "^2.4.0",
+    "nodemailer": "^10.1.1",
+    "pptxgenjs": "^4.0.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.2",
+    "concurrently": "^9.2.1",
+    "vite": "^7.1.7"
+  }
+}
