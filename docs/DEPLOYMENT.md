@@ -2,7 +2,7 @@
 
 ## Deployment status
 
-**Live deployment: not completed.** This workspace has a Render Blueprint, but it is not connected to an authorized GitHub repository or Render service, and no hosted MongoDB Atlas connection is configured here. Do not present a local URL or screenshots as a live deployment. Complete the provider setup below using Zyngram-approved accounts and submit the assigned URL only through approved channels.
+**Live deployment: partially verified.** As checked on 2026-10-21, the Netlify frontend at `https://zyngramcampushub.netlify.app` loaded, but `/api/health` returned 404. The Render API at `https://zyngram-campus-hub.onrender.com/api/health` returned `{"status":"ok","app":"Zyngram Campus Hub demo"}`. Earlier supplied Render logs showed Atlas authentication failure; the current health response does not independently verify database-backed workflows. Deploy the Netlify API rewrite and verify the application's API flows before reporting the full deployment as operational.
 
 ## Architecture
 
@@ -49,6 +49,21 @@ MongoDB Atlas
 | `ADMIN_NOTIFICATION_EMAIL` | Render settings | Approved mailbox for registration-request notifications. |
 
 The `.env.example` file contains blank secret/identity fields by design. For local use only, copy it to `.env` and use a local MongoDB URI. For production, set secrets only in the hosting provider's secret manager. Never copy a production `.env` into the repository.
+
+### MongoDB Atlas authentication failure
+
+If startup fails with `MongoServerError: bad auth : Authentication failed` (Atlas error code `8000`), Atlas was reached but rejected the credentials in `MONGODB_URI`. In the Atlas dashboard and Render service settings:
+
+1. Confirm the URI is for the correct cluster and that its username/password belong to an Atlas **database user** with access to the configured database. The Atlas website account password is not a database-user password.
+2. Reset the database user's password in Atlas if uncertain, then update the `MONGODB_URI` secret in Render with the new connection string.
+3. Percent-encode reserved characters in the URI username and password (for example, `@` becomes `%40`). Do not share the credentials or paste the URI into chat, logs, or source control.
+4. Save the Render environment change and redeploy/restart the service so the process reads the updated secret.
+
+If credentials are confirmed but the error changes to a connection timeout, check Atlas Network Access and the service's allowed outbound addresses separately. Network access problems typically produce a timeout, not an authentication-failed response.
+
+### Netlify frontend with Render API
+
+This app's frontend calls `/api/*` on its own origin. When publishing `frontend/dist` on Netlify, `frontend/public/_redirects` proxies those requests to the Render service at `https://zyngram-campus-hub.onrender.com`. If the Render hostname differs, update that redirect target before deploying. Set Render's `APP_BASE_URL` to the Netlify public URL if Netlify is the user-facing site so invitation links open the correct frontend. The Netlify frontend cannot pass its health check while the Render API is unavailable.
 
 ## Database initialization, persistence, and restart
 

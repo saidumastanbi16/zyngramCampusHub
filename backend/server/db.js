@@ -131,4 +131,12 @@ export const databasePromise = client.connect().then(async () => {
       )));
   }
   return database;
+}).catch((error) => {
+  if (error?.code === 8000 && /auth/i.test(error.message ?? '')) {
+    throw new Error(
+      'MongoDB authentication failed. Check the MONGODB_URI configured in Render: use the Atlas database user credentials (not your Atlas website login), confirm the password, and percent-encode reserved characters in the username or password.',
+      { cause: error }
+    );
+  }
+  throw error;
 });
