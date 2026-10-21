@@ -68,6 +68,11 @@ export const databasePromise = client.connect().then(async () => {
     database.collection('app_settings').createIndex({ key: 1 }, { unique: true }),
     database.collection('support_tickets').createIndex({ user_id: 1, created_at: -1 }),
     database.collection('support_tickets').createIndex({ status: 1, created_at: -1 }),
+    database.collection('student_registration_requests').createIndex(
+      { email: 1 },
+      { unique: true, partialFilterExpression: { status: 'pending' } }
+    ),
+    database.collection('student_registration_requests').createIndex({ status: 1, created_at: -1 }),
     database.collection('users').createIndex({ invite_token_hash: 1 }, { sparse: true }),
     database.collection('audit_log').createIndex({ created_at: -1 })
   ]);

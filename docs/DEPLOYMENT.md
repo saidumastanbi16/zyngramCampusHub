@@ -46,7 +46,9 @@ MongoDB Atlas
 | `BOOTSTRAP_ADMIN_PASSWORD` | Render secret, first deploy only | Unique 12–200 character bootstrap password; remove after successful bootstrap. |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_SECURE` | Render | SMTP transport settings. |
 | `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_FROM` | Render secrets/settings | SMTP account credentials and sender. |
-| `ADMIN_NOTIFICATION_EMAIL` | Render settings | Approved mailbox for registration-request notifications. |
+| `ADMIN_NOTIFICATION_EMAIL` | Render settings | Approved administrator mailbox for student-registration request notifications. |
+
+The Student sign-in page includes a **Request access** form. Submissions are stored in the administrator's **User management → Student registration requests** queue. When SMTP and `ADMIN_NOTIFICATION_EMAIL` are configured, the service emails the administrator; if email is unavailable, the saved request remains visible in that queue and the applicant is told the email was not sent. Approving a request creates a student account with no password; the administrator must then use **Send invitation** to deliver the one-time password setup link. Declining a request does not create an account.
 
 The `.env.example` file contains blank secret/identity fields by design. For local use only, copy it to `.env` and use a local MongoDB URI. For production, set secrets only in the hosting provider's secret manager. Never copy a production `.env` into the repository.
 
@@ -79,7 +81,7 @@ Run these checks against the **deployed HTTPS URL** and record date, URL, result
 - [ ] `/api/health` responds successfully.
 - [ ] Approved administrator sign-in works; unauthenticated administration requests are denied.
 - [ ] Approved candidate/student sign-in works; role-restricted routes reject unauthorized roles.
-- [ ] Registration works with SMTP notification configured, or the UI accurately explains the configured limitation.
+- [ ] Student access requests appear in the administrator queue; approve/decline actions work, and configured email notification reaches the approved mailbox.
 - [ ] Profile update persists after sign-out/sign-in.
 - [ ] Implemented course/module management flow persists when used by an authorized role.
 - [ ] Invalid input returns a validation error; unauthenticated API requests return `401` and disallowed role requests return `403`.

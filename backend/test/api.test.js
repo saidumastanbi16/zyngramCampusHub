@@ -10,6 +10,7 @@ process.env.MAIL_HOST = '';
 process.env.MAIL_USER = '';
 process.env.MAIL_PASSWORD = '';
 process.env.MAIL_FROM = '';
+process.env.ADMIN_NOTIFICATION_EMAIL = '';
 const { app, client, db, runUpcomingExamReminders } = await import('../server/index.js');
 const password = 'sample-access-only-2026';
 
@@ -445,6 +446,36 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
     body: { role: 'admin', email: 'campushub@zyngram.com', password }
   });
   assert.equal(adminLogin.status, 200);
+  const registration = await request('/student-registration-requests', { method: 'POST', body: {
+    name: 'New Campus Learner', email: 'new.campus.learner@example.test', cohort: 'Cohort 10'
+  } });
+  assert.equal(registration.status, 201);
+  assert.equal(registration.body.notification.sent, false);
+  assert.match(registration.body.notification.message, /not configured/);
+  assert.equal((await request('/student-registration-requests', { cookie: studentCookie })).status, 403);
+  assert.equal((await request('/student-registration-requests')).status, 401);
+  assert.equal((await request('/student-registration-requests', { method: 'POST', body: {
+    name: 'Duplicate Request', email: 'new.campus.learner@example.test', cohort: 'Cohort 10'
+  } })).status, 409);
+  const pendingRegistrations = await request('/student-registration-requests', { cookie: adminLogin.cookie });
+  assert.equal(pendingRegistrations.status, 200);
+  assert.equal(pendingRegistrations.body.find((item) => item.id === registration.body.requestId)?.status, 'pending');
+  const approvedRegistration = await request(`/student-registration-requests/${registration.body.requestId}`, {
+    method: 'PATCH', cookie: adminLogin.cookie, body: { status: 'approved' }
+  });
+  assert.equal(approvedRegistration.status, 200);
+  assert.equal(approvedRegistration.body.user.email, 'new.campus.learner@example.test');
+  assert.equal(approvedRegistration.body.user.role, 'student');
+  assert.equal('password_hash' in approvedRegistration.body.user, false);
+  assert.equal((await request('/users', { cookie: adminLogin.cookie })).body.some((item) => item.email === 'new.campus.learner@example.test'), true);
+  const rejectedRegistration = await request('/student-registration-requests', { method: 'POST', body: {
+    name: 'Declined Candidate', email: 'declined.candidate@example.test', cohort: 'Cohort 10'
+  } });
+  assert.equal(rejectedRegistration.status, 201);
+  assert.equal((await request(`/student-registration-requests/${rejectedRegistration.body.requestId}`, {
+    method: 'PATCH', cookie: adminLogin.cookie, body: { status: 'rejected' }
+  })).body.status, 'rejected');
+  assert.equal((await request('/users', { cookie: adminLogin.cookie })).body.some((item) => item.email === 'declined.candidate@example.test'), false);
   assert.deepEqual((await request('/exam-settings', { cookie: adminLogin.cookie })).body, { passMark: 70 });
   assert.equal((await request('/exam-settings', { method: 'PATCH', cookie: trainerLogin.cookie, body: { passMark: 60 } })).status, 403);
   assert.equal((await request('/exam-settings', { method: 'PATCH', cookie: adminLogin.cookie, body: { passMark: 60 } })).body.passMark, 60);
@@ -486,11 +517,11 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   } });
   assert.deepEqual({ score: manualGrade.body.score, passed: manualGrade.body.passed }, { score: 60, passed: true });
   const adminDashboard = await request('/dashboard', { cookie: adminLogin.cookie });
-  assert.equal(adminDashboard.body.stats.learners, 3);
+  assert.equal(adminDashboard.body.stats.learners, 4);
   assert.ok(Array.isArray(adminDashboard.body.tasks));
   assert.equal(adminDashboard.body.tasks.some((task) => task.learner_name === 'Sample Peer'), true);
   assert.equal(adminDashboard.body.tasks.some((task) => task.id === 't-unassigned'), true);
-  assert.deepEqual(adminDashboard.body.stats.userCounts, { students: 3, trainers: 4, coordinators: 1, admins: 1 });
+  assert.deepEqual(adminDashboard.body.stats.userCounts, { students: 4, trainers: 4, coordinators: 1, admins: 1 });
   assert.deepEqual(adminDashboard.body.system, {
     environment: 'Development prototype',
     database: 'MongoDB connected',

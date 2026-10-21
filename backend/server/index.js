@@ -7,7 +7,7 @@ import { Binary } from 'mongodb';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { client, databasePromise } from './db.js';
-import { invitationMailConfigured, sendInvitationEmail } from './mailer.js';
+import { invitationMailConfigured, sendInvitationEmail, sendStudentRegistrationNotification } from './mailer.js';
 
 const app = express();
 const db = await databasePromise;
@@ -32,6 +32,7 @@ const attendance = db.collection('attendance');
 const announcements = db.collection('announcements');
 const auditLog = db.collection('audit_log');
 const supportTickets = db.collection('support_tickets');
+const studentRegistrationRequests = db.collection('student_registration_requests');
 const exams = db.collection('exams');
 const examAttempts = db.collection('exam_attempts');
 const courseCertificates = db.collection('course_certificates');
@@ -1247,6 +1248,94 @@ app.post('/api/announcements', requireUser, requireRoles('trainer', 'coordinator
   res.status(201).json(toApiDocument(notice));
 });
 app.get('/api/profile', requireUser, async (req, res) => res.json({ user: req.user, courses: await courses.countDocuments() }));
+app.post('/api/student-registration-requests', async (req, res) => {
+  const parsed = z.object({
+    name: z.string().trim().min(2).max(100),
+    email: z.string().trim().email().max(254),
+    cohort: z.string().trim().min(2).max(100)
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter your name, a valid email address, and cohort.' });
+  const email = parsed.data.email.toLowerCase();
+  if (await users.findOne({ email })) return res.status(409).json({ error: 'An account already uses this email. Contact campus support if you need access.' });
+  const now = new Date().toISOString();
+  const request = {
+    _id: `registration-${crypto.randomUUID()}`,
+    ...parsed.data,
+    email,
+    status: 'pending',
+    created_at: now
+  };
+  try {
+    await studentRegistrationRequests.insertOne(request);
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: 'A registration request for this email is already awaiting review.' });
+    throw error;
+  }
+  await recordAudit('system:public-registration', 'student_registration.request', 'student_registration_request', request._id);
+  let notification;
+  const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL?.trim();
+  if (!adminEmail || !invitationMailConfigured()) {
+    notification = { sent: false, message: 'Your request is saved, but administrator email notifications are not configured.' };
+  } else {
+    try {
+      await sendStudentRegistrationNotification({
+        adminEmail, name: request.name, email: request.email, cohort: request.cohort, requestId: request._id
+      });
+      notification = { sent: true };
+    } catch (error) {
+      console.error('Student registration notification failed:', error);
+      notification = { sent: false, message: 'Your request is saved, but the administrator email could not be delivered.' };
+    }
+  }
+  res.status(201).json({ ok: true, requestId: request._id, notification });
+});
+app.get('/api/student-registration-requests', requireUser, requireRoles('admin'), async (_req, res) => {
+  const requests = await studentRegistrationRequests.find({}).sort({ created_at: -1 }).toArray();
+  res.json(requests.map(toApiDocument));
+});
+app.patch('/api/student-registration-requests/:id', requireUser, requireRoles('admin'), async (req, res) => {
+  const parsed = z.object({ status: z.enum(['approved', 'rejected']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose approve or reject for this registration request.' });
+  const registration = await studentRegistrationRequests.findOne({ _id: req.params.id, status: 'pending' });
+  if (!registration) return res.status(404).json({ error: 'Pending registration request not found.' });
+  const reviewedAt = new Date().toISOString();
+  if (parsed.data.status === 'rejected') {
+    const result = await studentRegistrationRequests.updateOne(
+      { _id: registration._id, status: 'pending' },
+      { $set: { status: 'rejected', reviewed_at: reviewedAt, reviewed_by: req.user._id } }
+    );
+    if (!result.modifiedCount) return res.status(409).json({ error: 'This registration request has already been reviewed.' });
+    await recordAudit(req.user._id, 'student_registration.reject', 'student_registration_request', registration._id);
+    return res.json({ id: registration._id, status: 'rejected' });
+  }
+  const person = {
+    _id: `u-${crypto.randomUUID()}`,
+    name: registration.name,
+    email: registration.email,
+    role: 'student',
+    cohort: registration.cohort,
+    avatar: registration.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+    password_hash: null,
+    created_at: reviewedAt
+  };
+  const claimed = await studentRegistrationRequests.updateOne(
+    { _id: registration._id, status: 'pending' },
+    { $set: { status: 'approved', reviewed_at: reviewedAt, reviewed_by: req.user._id, user_id: person._id } }
+  );
+  if (!claimed.modifiedCount) return res.status(409).json({ error: 'This registration request has already been reviewed.' });
+  try {
+    await users.insertOne(person);
+  } catch (error) {
+    await studentRegistrationRequests.updateOne(
+      { _id: registration._id, status: 'approved', reviewed_by: req.user._id },
+      { $set: { status: 'pending' }, $unset: { reviewed_at: '', reviewed_by: '', user_id: '' } }
+    );
+    if (error.code === 11000) return res.status(409).json({ error: 'An account already uses this email address.' });
+    throw error;
+  }
+  await recordAudit(req.user._id, 'student_registration.approve', 'student_registration_request', registration._id);
+  res.json({ id: registration._id, status: 'approved', user: publicUser(person) });
+});
 app.get('/api/users', requireUser, requireRoles('admin'), async (_req, res) => {
   const allUsers = await users.find({}, { projection: { name: 1, email: 1, role: 1, cohort: 1, avatar: 1, created_at: 1, password_hash: 1 } }).sort({ role: 1, name: 1 }).toArray();
   res.json(allUsers.map((user) => ({ ...publicUser(user), account_status: user.password_hash ? 'active' : 'setup required' })));

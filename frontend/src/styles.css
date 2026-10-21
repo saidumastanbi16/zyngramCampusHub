@@ -321,6 +321,9 @@ kbd { display: flex; align-items: center; gap: 2px; padding: 2px 4px; border: 1p
 .user-table-row { display: grid; grid-template-columns: 1.4fr .8fr 1fr .8fr; align-items: center; gap: 13px; min-width: 600px; min-height: 54px; border-bottom: 1px solid #f0f0eb; color: #68675f; font-size: 10px; }
 .user-table-row:last-child { border: 0; }
 .user-table-head { min-height: 38px; color: #99978f; font: 8px var(--mono); letter-spacing: .6px; }
+.registration-actions { display: flex; gap: 12px; }
+.registration-actions .text-link { padding: 0; border: 0; background: none; font-size: 9px; }
+.success-message .button-secondary { margin-left: auto; }
 .managed-user { display: flex; align-items: center; gap: 9px; }
 .managed-user>span:last-child { display: grid; gap: 3px; }
 .managed-user b { color: #47463f; font-size: 10px; font-weight: 600; }

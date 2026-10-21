@@ -734,12 +734,17 @@ function Audit({ notify }) {
 }
 function UserManagement({ notify }) {
   const [users, setUsers] = useState([]);
+  const [registrationRequests, setRegistrationRequests] = useState([]);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   const [invitation, setInvitation] = useState(null);
   const [invitingId, setInvitingId] = useState('');
   const [form, setForm] = useState({ name: '', email: '', role: 'student', cohort: 'Cohort 08' });
-  const load = useCallback(() => api('/users').then(setUsers), []);
+  const load = useCallback(async () => {
+    const [people, requests] = await Promise.all([api('/users'), api('/student-registration-requests')]);
+    setUsers(people);
+    setRegistrationRequests(requests);
+  }, []);
   useEffect(() => { load().catch((e) => notify(e.message)); }, [load, notify]);
   async function create(e) {
     e.preventDefault();
@@ -764,8 +769,19 @@ function UserManagement({ notify }) {
       setInvitingId('');
     }
   }
-  return <div className="page-content"><Heading eyebrow="CAMPUS OPERATIONS" title="People on campus." description="Manage sample user accounts and see which accounts still need secure credential setup." action={<button className="button-primary" onClick={() => setOpen(true)}><Plus size={15} /> Add account</button>} />
+  async function reviewRegistration(request, status) {
+    try {
+      await api(`/student-registration-requests/${request.id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await load();
+      notify(status === 'approved'
+        ? `${request.name} is now a student. Send an invitation to let them set a password.`
+        : `Registration request from ${request.name} was declined.`);
+    } catch (e) { notify(e.message); }
+  }
+  return <div className="page-content"><Heading eyebrow="CAMPUS OPERATIONS" title="People on campus." description="Review student access requests, manage campus accounts, and send secure credential setup invitations." action={<button className="button-primary" onClick={() => setOpen(true)}><Plus size={15} /> Add account</button>} />
     {invitation && <section className="success-message invitation-link" role="status"><span>Development-only setup link for {invitation.email}:</span><a href={invitation.url}>{invitation.url}</a><button className="button-secondary" onClick={() => navigator.clipboard.writeText(invitation.url).then(() => notify('Invitation link copied.')).catch(() => notify('Copy failed. Select and copy the link manually.'))}>Copy link</button></section>}
+    <div className="section-title-row"><div><h2>Student registration requests</h2><p>Review new student applications. Approved students need an invitation to set their password.</p></div><Badge tone={registrationRequests.filter((request) => request.status === 'pending').length ? 'review' : 'subtle'}>{registrationRequests.filter((request) => request.status === 'pending').length} pending</Badge></div>
+    <div className="panel user-management"><div className="user-table-row user-table-head"><span>APPLICANT</span><span>COHORT</span><span>REQUESTED</span><span>REVIEW</span></div>{registrationRequests.map((request) => <div className="user-table-row" key={request.id}><span className="managed-user"><Avatar initials={request.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()} /><span><b>{request.name}</b><small>{request.email}</small></span></span><span>{request.cohort}</span><span>{new Date(request.created_at).toLocaleDateString()}</span><span>{request.status === 'pending' ? <div className="registration-actions"><button className="text-link" onClick={() => reviewRegistration(request, 'approved')}>Approve</button><button className="text-link" onClick={() => reviewRegistration(request, 'rejected')}>Decline</button></div> : <Badge tone={request.status === 'approved' ? 'positive' : 'subtle'}>{request.status}</Badge>}</span></div>)}{registrationRequests.length === 0 && <div className="empty-state">No student registration requests yet.</div>}</div>
     <div className="panel user-management"><div className="user-table-row user-table-head"><span>PERSON</span><span>ROLE</span><span>COHORT</span><span>ACCOUNT</span></div>{users.map((user) => <div className="user-table-row" key={user.id}><span className="managed-user"><Avatar initials={user.avatar} /><span><b>{user.name}</b><small>{user.email}</small></span></span><span><Badge tone="subtle">{ROLE[user.role]}</Badge></span><span>{user.cohort}</span><span><Badge tone={user.account_status === 'active' ? 'positive' : 'review'}>{user.account_status}</Badge>{user.account_status !== 'active' && <button className="text-link invite-button" disabled={invitingId === user.id} onClick={() => invite(user)}>{invitingId === user.id ? 'Sending…' : 'Send invitation'} <ArrowRight size={13} /></button>}</span></div>)}</div>
     <p className="fine-print"><ShieldCheck size={14} /> Invitations expire after 48 hours and can only be used once. Passwords are never visible to administrators.</p>
     {open && <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="user-title"><div className="modal-top"><span className="modal-icon"><Users size={19} /></span><button className="icon-button" aria-label="Close" onClick={() => setOpen(false)}><X size={19} /></button></div><p className="eyebrow">CAMPUS OPERATIONS</p><h2 id="user-title">Add a person.</h2><p className="muted">After adding the account, send a one-time setup invitation by email.</p><form onSubmit={create}><label htmlFor="user-name">Full name</label><input id="user-name" required minLength={2} maxLength={100} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /><label htmlFor="user-email">Campus email</label><input id="user-email" required type="email" maxLength={254} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /><label htmlFor="user-role">Portal role</label><select id="user-role" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>{PORTALS.map((p) => <option value={p.role} key={p.role}>{p.title}</option>)}</select><label htmlFor="user-cohort">Cohort or team</label><input id="user-cohort" required minLength={2} maxLength={100} value={form.cohort} onChange={(e) => setForm({ ...form, cohort: e.target.value })} />{error && <p className="error-message" role="alert">{error}</p>}<div className="modal-actions"><button className="button-secondary" type="button" onClick={() => setOpen(false)}>Cancel</button><button className="button-dark">Add account <ArrowRight size={15} /></button></div></form></section></div>}
@@ -780,21 +796,42 @@ const PORTALS = [
 function Login({ onLogin }) {
   const [users, setUsers] = useState([]); const [selected, setSelected] = useState(null); const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [mode, setMode] = useState('credentials');
+  const [registrationOpen, setRegistrationOpen] = useState(false); const [registrationDone, setRegistrationDone] = useState(false);
+  const [registrationNotice, setRegistrationNotice] = useState('');
+  const [registration, setRegistration] = useState({ name: '', email: '', cohort: 'Cohort 08' });
   useEffect(() => { api('/demo-users').then(setUsers).catch(() => {}); }, []);
   const trainerAccounts = users.filter((item) => item.role === 'trainer');
-  async function choose(role) { const user = users.find((item) => item.role === role); setSelected(role); setEmail(user?.email || ''); setError(''); setMode('credentials'); setPassword(''); }
+  async function choose(role) { const user = users.find((item) => item.role === role); setSelected(role); setEmail(user?.email || ''); setError(''); setMode('credentials'); setPassword(''); setRegistrationOpen(false); setRegistrationDone(false); }
   async function signIn(e) { e.preventDefault(); setError(''); setBusy(true); try { await onLogin({ role: selected, email, password }); } catch (err) { setError(err.message); setBusy(false); } }
   async function demo(role) { setBusy(true); setError(''); try { await onLogin({ role, demo: true }); } catch (err) { setError(err.message); setBusy(false); } }
+  async function submitRegistration(e) {
+    e.preventDefault(); setError(''); setBusy(true); setRegistrationNotice('');
+    try {
+      const result = await api('/student-registration-requests', { method: 'POST', body: JSON.stringify(registration) });
+      setRegistrationDone(true);
+      setRegistrationNotice(result.notification?.message || '');
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
+  }
   if (selected) return <main className="login-screen">
     <section className="login-art"><a className="brand light" href="#" onClick={(e) => { e.preventDefault(); setSelected(null); }}><img className="brand-logo" src="/zyngram-logo.svg" alt="" /><span>ZYNGRAM</span></a><div className="art-copy"><p className="eyebrow light-eyebrow">YOUR SPACE, YOUR PACE</p><h1>Welcome<br />back to<br /><em>your campus.</em></h1><p>Come as you are. Pick up where you left off.</p></div><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark">✳</div><div className="art-foot"><span>DESIGNED FOR THE IN-BETWEEN</span><span>HYDERABAD · INDIA</span></div></section>
-    <section className="login-panel"><div className="login-content"><button className="back-link" onClick={() => { setSelected(null); setError(''); }}><ArrowRight className="back-arrow" size={15} /> All portals</button><span className="demo-pill"><span className="pulse-dot" /> {PORTALS.find((p) => p.role === selected)?.title.toUpperCase()} PORTAL</span><h2>Good to have<br />you back.</h2><p className="muted login-intro">Sign in with your campus account to continue.</p>
-      <form className="credential-form" onSubmit={signIn}>
+    <section className="login-panel"><div className="login-content"><button className="back-link" onClick={() => { setSelected(null); setError(''); }}><ArrowRight className="back-arrow" size={15} /> All portals</button><span className="demo-pill"><span className="pulse-dot" /> {registrationOpen ? 'STUDENT REGISTRATION' : `${PORTALS.find((p) => p.role === selected)?.title.toUpperCase()} PORTAL`}</span><h2>{registrationOpen ? registrationDone ? 'Request received.' : 'Join your campus.' : <>Good to have<br />you back.</>}</h2><p className="muted login-intro">{registrationOpen ? registrationDone ? 'Your request is waiting for administrator review. If approved, the campus team will send you a secure password setup invitation.' : 'Send a request to join as a student. An administrator will review it before you can sign in.' : 'Sign in with your campus account to continue.'}</p>
+      {registrationOpen ? registrationDone
+        ? <div className="success-message" role="status">Your student access request has been submitted.{registrationNotice && <p>{registrationNotice}</p>}<button className="button-secondary" onClick={() => { setRegistrationOpen(false); setRegistrationDone(false); setRegistrationNotice(''); setError(''); }}>Back to sign in</button></div>
+        : <form className="credential-form" onSubmit={submitRegistration}>
+          <label htmlFor="registration-name">Full name</label><input id="registration-name" required minLength={2} maxLength={100} value={registration.name} onChange={(e) => setRegistration({ ...registration, name: e.target.value })} />
+          <label htmlFor="registration-email">Email address</label><input id="registration-email" type="email" required maxLength={254} value={registration.email} onChange={(e) => setRegistration({ ...registration, email: e.target.value })} />
+          <label htmlFor="registration-cohort">Cohort</label><input id="registration-cohort" required minLength={2} maxLength={100} value={registration.cohort} onChange={(e) => setRegistration({ ...registration, cohort: e.target.value })} />
+          {error && <p className="error-message" role="alert">{error}</p>}<button className="button-dark full-width" disabled={busy}>{busy ? 'Submitting…' : 'Request student access'} <ArrowRight size={16} /></button>
+          <button className="demo-switch" type="button" onClick={() => { setRegistrationOpen(false); setError(''); }}>Back to student sign in</button>
+        </form>
+        : <form className="credential-form" onSubmit={signIn}>
         {selected === 'trainer' && trainerAccounts.length > 1 && <><label htmlFor="trainer-account">Choose trainer profile</label><select id="trainer-account" value={trainerAccounts.some((trainer) => trainer.email === email) ? email : ''} onChange={(e) => { setEmail(e.target.value); setPassword(''); setError(''); }} required><option value="" disabled>Select your trainer account</option>{trainerAccounts.map((trainer) => <option key={trainer.id} value={trainer.email}>{trainer.name} · {trainer.email}</option>)}</select></>}
         <label htmlFor="login-email">Campus email</label><input id="login-email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@campus.edu" />
         <label htmlFor="login-password">Password</label><input id="login-password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" />
         {error && <p className="error-message" role="alert">{error}</p>}<button className="button-dark full-width" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'} <ArrowRight size={16} /></button>
-      </form>
-      {users.length > 0 && <><button className="demo-switch" onClick={() => setMode(mode === 'credentials' ? 'demo' : 'credentials')}>{mode === 'credentials' ? 'Exploring the prototype? Try sample access' : 'Back to campus sign in'}</button>{mode === 'demo' && <div className="demo-roles"><p className="field-label">SAMPLE DATA · DEVELOPMENT ONLY</p>{PORTALS.map((p) => <button className="demo-role-button" key={p.role} disabled={busy} onClick={() => demo(p.role)}><span>{p.title}</span><ArrowRight size={15} /></button>)}</div>}</>}
+      </form>}
+      {selected === 'student' && !registrationOpen && <button className="demo-switch" onClick={() => { setRegistrationOpen(true); setError(''); }}>New student? Request access</button>}
+      {users.length > 0 && !registrationOpen && <><button className="demo-switch" onClick={() => setMode(mode === 'credentials' ? 'demo' : 'credentials')}>{mode === 'credentials' ? 'Exploring the prototype? Try sample access' : 'Back to campus sign in'}</button>{mode === 'demo' && <div className="demo-roles"><p className="field-label">SAMPLE DATA · DEVELOPMENT ONLY</p>{PORTALS.map((p) => <button className="demo-role-button" key={p.role} disabled={busy} onClick={() => demo(p.role)}><span>{p.title}</span><ArrowRight size={15} /></button>)}</div>}</>}
       <p className="login-privacy"><ShieldCheck size={15} /> Your learning records stay private.</p>
     </div><footer className="login-footer">A learning community by <strong>Zyngram</strong><span>v1.0 · Prototype</span></footer></section>
   </main>;
