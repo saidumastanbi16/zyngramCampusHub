@@ -61,7 +61,7 @@ app.use((_req, res, next) => {
 
 function publicUser(user) {
   if (!user) return null;
-  const { password_hash, invite_token_hash, invite_expires_at, _id, ...safe } = user;
+  const { password_hash, invite_token_hash, invite_expires_at, session_version, _id, ...safe } = user;
   return { ...safe, _id, id: String(_id) };
 }
 function isCalendarDate(value) {
@@ -89,6 +89,7 @@ async function currentUser(req) {
     return null;
   }
   const user = await users.findOne({ _id: payload.sub });
+  if (user && (payload.sv ?? 0) !== (user.session_version ?? 0)) return null;
   return publicUser(user);
 }
 async function requireUser(req, res, next) {
@@ -208,7 +209,7 @@ async function issueCourseCertificate(learnerId, courseId) {
   return courseCertificates.findOne({ learner_id: learnerId, course_id: courseId });
 }
 async function issueSession(user, res) {
-  const token = jwt.sign({ sub: user._id }, secret, { expiresIn: '8h', issuer: 'zyngram-campus-hub' });
+  const token = jwt.sign({ sub: user._id, sv: user.session_version ?? 0 }, secret, { expiresIn: '8h', issuer: 'zyngram-campus-hub' });
   res.cookie('campus_session', token, {
     httpOnly: true, secure: production, sameSite: 'strict', maxAge: 8 * 60 * 60 * 1000, path: '/'
   });
@@ -229,6 +230,50 @@ app.post('/api/auth/demo', async (req, res) => {
   await issueSession(user, res);
   await recordAudit(user._id, 'demo.sign_in', 'session', user._id);
   res.json({ user: publicUser(user) });
+});
+app.post('/api/admin/recover', async (req, res) => {
+  const configuredToken = process.env.ADMIN_RECOVERY_TOKEN;
+  if (!configuredToken || configuredToken.length < 32) return res.status(404).json({ error: 'Not found.' });
+  const suppliedToken = req.get('x-admin-recovery-token') || '';
+  const configuredBuffer = Buffer.from(configuredToken);
+  const suppliedBuffer = Buffer.from(suppliedToken);
+  const tokenMatches = suppliedBuffer.length === configuredBuffer.length
+    && crypto.timingSafeEqual(suppliedBuffer, configuredBuffer);
+  if (!tokenMatches) return res.status(401).json({ error: 'Recovery authorization failed.' });
+  const parsed = z.object({
+    currentEmail: z.string().trim().email().max(254),
+    newEmail: z.string().trim().email().max(254),
+    newPassword: z.string().min(16).max(200)
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Provide the current admin email, new email, and a new password of at least 16 characters.' });
+  if (await users.countDocuments({ role: 'admin' }) !== 1) {
+    return res.status(409).json({ error: 'Recovery requires exactly one existing administrator account.' });
+  }
+  const salt = crypto.randomBytes(16).toString('hex');
+  const passwordHash = `scrypt$${salt}$${crypto.scryptSync(parsed.data.newPassword, salt, 64).toString('hex')}`;
+  let result;
+  try {
+    result = await users.updateOne({
+      role: 'admin',
+      email: parsed.data.currentEmail.toLowerCase(),
+      admin_recovery_completed_at: { $exists: false }
+    }, {
+      $set: {
+        email: parsed.data.newEmail.toLowerCase(),
+        password_hash: passwordHash,
+        credential_set_at: new Date().toISOString(),
+        admin_recovery_completed_at: new Date().toISOString()
+      },
+      $inc: { session_version: 1 },
+      $unset: { invite_token_hash: '', invite_expires_at: '' }
+    });
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: 'The new email is already used by another account.' });
+    throw error;
+  }
+  if (!result.modifiedCount) return res.status(409).json({ error: 'Admin account not found or recovery has already been used.' });
+  await recordAudit('system:admin-recovery', 'admin.recover', 'user', parsed.data.newEmail.toLowerCase());
+  res.json({ ok: true, email: parsed.data.newEmail.toLowerCase() });
 });
 app.post('/api/auth/login', async (req, res) => {
   const parsed = z.object({

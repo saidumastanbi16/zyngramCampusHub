@@ -11,6 +11,7 @@ process.env.MAIL_USER = '';
 process.env.MAIL_PASSWORD = '';
 process.env.MAIL_FROM = '';
 process.env.ADMIN_NOTIFICATION_EMAIL = '';
+process.env.ADMIN_RECOVERY_TOKEN = 'test-only-admin-recovery-token-with-more-than-32-characters';
 const { app, client, db, runUpcomingExamReminders } = await import('../server/index.js');
 const password = 'sample-access-only-2026';
 
@@ -56,12 +57,13 @@ after(async () => {
   await client.close();
 });
 
-async function request(path, { method = 'GET', body, cookie } = {}) {
+async function request(path, { method = 'GET', body, cookie, recoveryToken } = {}) {
   const response = await fetch(`${base}${path}`, {
     method,
     headers: {
       ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
-      ...(cookie ? { Cookie: cookie } : {})
+      ...(cookie ? { Cookie: cookie } : {}),
+      ...(recoveryToken ? { 'X-Admin-Recovery-Token': recoveryToken } : {})
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) })
   });
@@ -605,4 +607,26 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   const repeatDemoImport = await request('/admin/demo-data', { method: 'POST', cookie: adminLogin.cookie });
   assert.equal(repeatDemoImport.status, 200);
   assert.equal(repeatDemoImport.body.alreadyPresent, true);
+
+  const recoveryBody = {
+    currentEmail: 'campushub@zyngram.com',
+    newEmail: 'recovered.admin@example.test',
+    newPassword: 'new-private-admin-password-2026'
+  };
+  assert.equal((await request('/admin/recover', { method: 'POST', body: recoveryBody })).status, 401);
+  const recoveredAdmin = await request('/admin/recover', {
+    method: 'POST', body: recoveryBody, recoveryToken: process.env.ADMIN_RECOVERY_TOKEN
+  });
+  assert.equal(recoveredAdmin.status, 200);
+  assert.deepEqual(recoveredAdmin.body, { ok: true, email: 'recovered.admin@example.test' });
+  assert.equal((await request('/auth/login', { method: 'POST', body: {
+    role: 'admin', email: 'campushub@zyngram.com', password
+  } })).status, 401);
+  assert.equal((await request('/dashboard', { cookie: adminLogin.cookie })).status, 401);
+  assert.equal((await request('/auth/login', { method: 'POST', body: {
+    role: 'admin', email: 'recovered.admin@example.test', password: recoveryBody.newPassword
+  } })).status, 200);
+  assert.equal((await request('/admin/recover', {
+    method: 'POST', body: recoveryBody, recoveryToken: process.env.ADMIN_RECOVERY_TOKEN
+  })).status, 409);
 });
