@@ -240,6 +240,7 @@ app.post('/api/admin/recover', async (req, res) => {
   const tokenMatches = suppliedBuffer.length === configuredBuffer.length
     && crypto.timingSafeEqual(suppliedBuffer, configuredBuffer);
   if (!tokenMatches) return res.status(401).json({ error: 'Recovery authorization failed.' });
+  const tokenHash = crypto.createHash('sha256').update(configuredToken).digest('hex');
   const parsed = z.object({
     currentEmail: z.string().trim().email().max(254),
     newEmail: z.string().trim().email().max(254),
@@ -249,20 +250,28 @@ app.post('/api/admin/recover', async (req, res) => {
   if (await users.countDocuments({ role: 'admin' }) !== 1) {
     return res.status(409).json({ error: 'Recovery requires exactly one existing administrator account.' });
   }
+  try {
+    await appSettings.updateOne(
+      { key: 'admin_recovery_token_hashes', used_tokens: { $ne: tokenHash } },
+      { $setOnInsert: { key: 'admin_recovery_token_hashes' }, $addToSet: { used_tokens: tokenHash } },
+      { upsert: true }
+    );
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: 'This recovery token has already been used.' });
+    throw error;
+  }
   const salt = crypto.randomBytes(16).toString('hex');
   const passwordHash = `scrypt$${salt}$${crypto.scryptSync(parsed.data.newPassword, salt, 64).toString('hex')}`;
   let result;
   try {
     result = await users.updateOne({
       role: 'admin',
-      email: parsed.data.currentEmail.toLowerCase(),
-      admin_recovery_completed_at: { $exists: false }
+      email: parsed.data.currentEmail.toLowerCase()
     }, {
       $set: {
         email: parsed.data.newEmail.toLowerCase(),
         password_hash: passwordHash,
-        credential_set_at: new Date().toISOString(),
-        admin_recovery_completed_at: new Date().toISOString()
+        credential_set_at: new Date().toISOString()
       },
       $inc: { session_version: 1 },
       $unset: { invite_token_hash: '', invite_expires_at: '' }
@@ -271,7 +280,7 @@ app.post('/api/admin/recover', async (req, res) => {
     if (error.code === 11000) return res.status(409).json({ error: 'The new email is already used by another account.' });
     throw error;
   }
-  if (!result.modifiedCount) return res.status(409).json({ error: 'Admin account not found or recovery has already been used.' });
+  if (!result.modifiedCount) return res.status(409).json({ error: 'Admin account was not found for the supplied current email.' });
   await recordAudit('system:admin-recovery', 'admin.recover', 'user', parsed.data.newEmail.toLowerCase());
   res.json({ ok: true, email: parsed.data.newEmail.toLowerCase() });
 });

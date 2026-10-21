@@ -1,4 +1,4 @@
-# Day 20 — Campus Hub deployment guide
+  # Day 20 — Campus Hub deployment guide
 
 ## Deployment status
 
@@ -44,6 +44,7 @@ MongoDB Atlas
 | `APP_BASE_URL` | Render | Public HTTPS URL used to create invitation/reset links. |
 | `BOOTSTRAP_ADMIN_EMAIL` | Render secret/settings | Approved administrator email for first-database initialization. |
 | `BOOTSTRAP_ADMIN_PASSWORD` | Render secret, first deploy only | Unique 12–200 character bootstrap password; remove after successful bootstrap. |
+| `ADMIN_RECOVERY_TOKEN` | Render secret, temporary | One-use recovery authorization; generate a fresh random value of at least 32 characters for each recovery and remove it immediately afterward. |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_SECURE` | Render | SMTP transport settings. |
 | `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_FROM` | Render secrets/settings | SMTP account credentials and sender. |
 | `ADMIN_NOTIFICATION_EMAIL` | Render settings | Approved administrator mailbox for student-registration request notifications. |
@@ -53,6 +54,10 @@ The Student sign-in page includes a **Request access** form. Submissions are sto
 To add the fictional demonstration records to the configured production database, sign in as administrator, open **User management**, choose **Add demo data**, and confirm. This admin-only API action runs on Render and uses the Render `MONGODB_URI`/`MONGODB_DATABASE` connection to Atlas; it does not use the developer workstation's local `.env` database. It inserts missing demo profiles, courses, assignments, and announcements without overwriting existing records. Passwords remain unset, so imported demo accounts cannot sign in until credentials are configured. `.example.test` addresses are non-deliverable. The import is safe to repeat.
 
 The `.env.example` file contains blank secret/identity fields by design. For local use only, copy it to `.env` and use a local MongoDB URI. For production, set secrets only in the hosting provider's secret manager. Never copy a production `.env` into the repository.
+
+### One-time administrator recovery
+
+If the only administrator is locked out, set a fresh temporary, random `ADMIN_RECOVERY_TOKEN` of at least 32 characters in Render and redeploy. Send one `POST /api/admin/recover` request with that token in the `X-Admin-Recovery-Token` header and JSON fields `currentEmail`, `newEmail`, and `newPassword` (at least 16 characters). Each token is stored only as a hash and can be used once. The endpoint updates the existing sole admin account; it does not create another administrator. Remove `ADMIN_RECOVERY_TOKEN` from Render immediately after a successful recovery. Never put the recovery token or new password in source control, a public terminal transcript, or chat.
 
 ### MongoDB Atlas authentication failure
 

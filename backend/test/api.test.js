@@ -629,4 +629,20 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal((await request('/admin/recover', {
     method: 'POST', body: recoveryBody, recoveryToken: process.env.ADMIN_RECOVERY_TOKEN
   })).status, 409);
+  const nextRecoveryBody = {
+    currentEmail: 'recovered.admin@example.test',
+    newEmail: 'recovered.admin@example.test',
+    newPassword: 'another-private-admin-password-2026'
+  };
+  const nextRecoveryToken = 'another-test-only-admin-recovery-token-with-more-than-32-characters';
+  process.env.ADMIN_RECOVERY_TOKEN = nextRecoveryToken;
+  assert.equal((await request('/admin/recover', {
+    method: 'POST', body: nextRecoveryBody, recoveryToken: nextRecoveryToken
+  })).status, 200);
+  assert.equal((await request('/auth/login', { method: 'POST', body: {
+    role: 'admin', email: nextRecoveryBody.newEmail, password: recoveryBody.newPassword
+  } })).status, 401);
+  assert.equal((await request('/auth/login', { method: 'POST', body: {
+    role: 'admin', email: nextRecoveryBody.newEmail, password: nextRecoveryBody.newPassword
+  } })).status, 200);
 });
