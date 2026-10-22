@@ -155,6 +155,13 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
     body: { role: 'trainer', email: 'priya.demo@example.test', password }
   });
   assert.equal(trainerLogin.status, 200);
+  const allCourseStudents = await request('/course-learners?courseId=c-product', { cookie: trainerLogin.cookie });
+  assert.equal(allCourseStudents.status, 200);
+  assert.ok(allCourseStudents.body.some((learner) => learner.id === 'u-student'));
+  assert.ok(allCourseStudents.body.some((learner) => learner.id === 'u-other-student'));
+  assert.ok(allCourseStudents.body.some((learner) => learner.id === 'u-unassigned-student'));
+  assert.equal((await request('/course-learners?courseId=c-product', { cookie: studentCookie })).status, 403);
+  assert.equal((await request('/course-learners?courseId=c-other', { cookie: trainerLogin.cookie })).status, 404);
   const attendanceRoster = await request('/attendance/roster?courseId=c-product&date=2026-10-15', { cookie: trainerLogin.cookie });
   assert.equal(attendanceRoster.status, 200);
   assert.deepEqual(attendanceRoster.body.learners.map((learner) => learner.id).sort(), ['u-other-student', 'u-student']);
@@ -233,9 +240,11 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   } });
   assert.equal(assignedTask.status, 201);
   assert.equal((await request('/tasks', { cookie: studentCookie })).body.some((task) => task.id === assignedTask.body.id), true);
-  assert.equal((await request('/tasks', { method: 'POST', cookie: trainerLogin.cookie, body: {
+  const unassignedLearnerTask = await request('/tasks', { method: 'POST', cookie: trainerLogin.cookie, body: {
     courseId: 'c-product', learnerId: 'u-unassigned-student', title: 'Wrong scope task', description: 'This student is not on the course.', dueDate: '2026-11-20'
-  } })).status, 404);
+  } });
+  assert.equal(unassignedLearnerTask.status, 201);
+  assert.equal(unassignedLearnerTask.body.learner_id, 'u-unassigned-student');
   const classStart = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
   const classEnd = new Date(classStart.getTime() + 60 * 60 * 1000);
   const classSession = await request('/class-sessions', { method: 'POST', cookie: trainerLogin.cookie, body: {
@@ -285,7 +294,7 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal(trainerAnnouncement.status, 201);
   assert.equal((await request('/announcements', { cookie: studentCookie })).body.some((item) => item.id === trainerAnnouncement.body.id), true);
   const unassignedLogin = await request('/auth/login', { method: 'POST', body: { role: 'student', email: 'unassigned@example.test', password } });
-  assert.equal((await request('/announcements', { cookie: unassignedLogin.cookie })).body.some((item) => item.id === trainerAnnouncement.body.id), false);
+  assert.equal((await request('/announcements', { cookie: unassignedLogin.cookie })).body.some((item) => item.id === trainerAnnouncement.body.id), true);
   assert.equal((await request('/readiness/resume', { method: 'POST', cookie: studentCookie, body: { courseId: 'c-product', resumeUrl: 'https://example.test/aarav-resume.pdf' } })).status, 200);
   const readinessRecord = (await request('/readiness', { cookie: trainerLogin.cookie })).body.find((item) => item.learner_id === 'u-student' && item.course_id === 'c-product');
   assert.equal(readinessRecord.resume_url, 'https://example.test/aarav-resume.pdf');
@@ -302,7 +311,7 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   const trainerProgress = await request('/progress', { cookie: trainerLogin.cookie });
   assert.equal(trainerProgress.status, 200);
   assert.equal(trainerProgress.body.learners.some((learner) => learner.id === 'u-other-student'), true);
-  assert.equal(trainerProgress.body.learners.some((learner) => learner.id === 'u-unassigned-student'), false);
+  assert.equal(trainerProgress.body.learners.some((learner) => learner.id === 'u-unassigned-student'), true);
   assert.equal((await request('/progress', { cookie: studentCookie })).status, 403);
   assert.equal((await request('/tasks/t-unassigned/feedback', { method: 'POST', cookie: trainerLogin.cookie, body: {
     feedback: 'This trainer is not assigned to the course.', status: 'complete'
@@ -462,8 +471,6 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   const learnersBeforeApproval = await request('/course-learners?courseId=c-product', { cookie: trainerLogin.cookie });
   assert.equal(learnersBeforeApproval.status, 200);
   assert.equal(learnersBeforeApproval.body.some((learner) => learner.name === 'New Campus Learner'), false);
-  assert.equal((await request('/course-learners?courseId=c-product', { cookie: studentCookie })).status, 403);
-  assert.equal((await request('/course-learners?courseId=c-other', { cookie: trainerLogin.cookie })).status, 404);
   assert.equal((await request('/student-registration-requests', { cookie: studentCookie })).status, 403);
   assert.equal((await request('/student-registration-requests')).status, 401);
   assert.equal((await request('/student-registration-requests', { method: 'POST', body: {
@@ -545,8 +552,8 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
     learnerId: 'u-student', unlockedWeek: 4, reason: 'Approved the learner remediation plan after review.'
   } })).status, 200);
   assert.equal((await request('/student-progress/c-product/unlock', { method: 'PATCH', cookie: trainerLogin.cookie, body: {
-    learnerId: 'u-unassigned-student', unlockedWeek: 4, reason: 'This learner is not enrolled in my assigned course.'
-  } })).status, 404);
+    learnerId: 'u-unassigned-student', unlockedWeek: 4, reason: 'Unlock this learner after reviewing their course progress.'
+  } })).status, 200);
   const descriptiveSubmission = await request(`/exams/${weekFourExam.body.id}/attempt`, { method: 'POST', cookie: studentCookie, body: { answers: ['Use labels for form controls.'] } });
   assert.equal(descriptiveSubmission.body.pendingReview, true);
   assert.equal(descriptiveSubmission.body.score, null);
