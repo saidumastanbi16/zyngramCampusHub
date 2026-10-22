@@ -1444,11 +1444,14 @@ app.post('/api/users/:id/invite', requireUser, requireRoles('admin'), async (req
   try {
     if (mailConfigured) await sendInvitationEmail({ email: person.email, name: person.name, invitationUrl: url });
   } catch (error) {
-    await users.updateOne({ _id: person._id, invite_token_hash: tokenHash }, {
-      $unset: { invite_token_hash: '', invite_expires_at: '' }
-    });
     console.error('Invitation delivery failed:', error);
-    return res.status(503).json({ error: 'The invitation could not be delivered. Verify SMTP settings and try again.' });
+    await recordAudit(req.user._id, 'user.invite.manual', 'user', person._id, { email_delivery_failed: true });
+    return res.json({
+      ok: true,
+      expires_at: expiresAt.toISOString(),
+      manual_invitation_url: url,
+      email_delivery_failed: true
+    });
   }
   await recordAudit(req.user._id, mailConfigured ? 'user.invite' : 'user.invite.manual', 'user', person._id);
   res.json({

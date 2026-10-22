@@ -582,6 +582,30 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal((await request('/auth/login', { method: 'POST', body: {
     role: 'student', email: 'new.learner@example.test', password: 'a-secure-password-2026'
   } })).status, 200);
+  const smtpFallbackUser = await request('/users', { method: 'POST', cookie: adminLogin.cookie, body: {
+    name: 'SMTP Fallback Learner', email: 'smtp.fallback@example.test', role: 'student', cohort: 'Cohort 09'
+  } });
+  const originalMailSettings = Object.fromEntries(['MAIL_HOST', 'MAIL_PORT', 'MAIL_USER', 'MAIL_PASSWORD', 'MAIL_FROM']
+    .map((key) => [key, process.env[key]]));
+  process.env.MAIL_HOST = 'smtp.gmail.com';
+  process.env.MAIL_PORT = 'invalid';
+  process.env.MAIL_USER = 'sender@example.test';
+  process.env.MAIL_PASSWORD = 'test-only-smtp-secret';
+  try {
+    const fallbackInvitation = await request(`/users/${smtpFallbackUser.body.id}/invite`, { method: 'POST', cookie: adminLogin.cookie });
+    assert.equal(fallbackInvitation.status, 200);
+    assert.equal(fallbackInvitation.body.email_delivery_failed, true);
+    const fallbackToken = new URL(fallbackInvitation.body.manual_invitation_url).searchParams.get('invite');
+    assert.ok(fallbackToken);
+    assert.equal((await request('/auth/accept-invite', { method: 'POST', body: {
+      token: fallbackToken, password: 'another-secure-password-2026'
+    } })).status, 200);
+  } finally {
+    for (const [key, value] of Object.entries(originalMailSettings)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
   const adminTickets = await request('/support', { cookie: adminLogin.cookie });
   assert.equal(adminTickets.status, 200);
   assert.equal(adminTickets.body.some((ticket) => ticket.id === supportTicket.body.id), true);
