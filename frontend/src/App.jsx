@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Tutorials from './Tutorials.jsx';
 import {
-  Activity, ArrowRight, ArrowUpRight, Award, Bell, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2,
+  Activity, ArrowRight, ArrowUpRight, Award, Bell, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2, Copy,
   ChevronDown, CircleHelp, Clock3, Command, Download, FileCheck2, FileText, GraduationCap,
   LayoutDashboard, LifeBuoy, LogOut, Menu, MessageCircle, MoreHorizontal, Play, Plus, Radio, Search,
   Send, ShieldCheck, Sparkles, Users, X
@@ -825,6 +825,7 @@ function Login({ onLogin }) {
   const [registration, setRegistration] = useState({ name: '', password: '', cohort: 'Cohort 08' });
   const [confirmPassword, setConfirmPassword] = useState('');
   const [registrationAccount, setRegistrationAccount] = useState(null);
+  const [copyMessage, setCopyMessage] = useState('');
   useEffect(() => { api('/demo-users').then(setUsers).catch(() => {}); }, []);
   const trainerAccounts = users.filter((item) => item.role === 'trainer');
   async function choose(role) { const user = users.find((item) => item.role === role); setSelected(role); setEmail(user?.email || ''); setError(''); setMode('credentials'); setPassword(''); setRegistrationOpen(false); setRegistrationDone(false); }
@@ -843,11 +844,29 @@ function Login({ onLogin }) {
       setConfirmPassword('');
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
+  async function copyRegistrationValue(value, label) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyMessage(`${label} copied.`);
+    } catch {
+      setCopyMessage('Could not copy automatically. Select and copy the value instead.');
+    }
+  }
   if (selected) return <main className="login-screen">
     <section className="login-art"><a className="brand light" href="#" onClick={(e) => { e.preventDefault(); setSelected(null); }}><img className="brand-logo" src="/zyngram-logo.svg" alt="" /><span>ZYNGRAM</span></a><div className="art-copy"><p className="eyebrow light-eyebrow">YOUR SPACE, YOUR PACE</p><h1>Welcome<br />back to<br /><em>your campus.</em></h1><p>Come as you are. Pick up where you left off.</p></div><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark">✳</div><div className="art-foot"><span>DESIGNED FOR THE IN-BETWEEN</span><span>HYDERABAD · INDIA</span></div></section>
-    <section className="login-panel"><div className="login-content"><button className="back-link" onClick={() => { setSelected(null); setError(''); }}><ArrowRight className="back-arrow" size={15} /> All portals</button><span className="demo-pill"><span className="pulse-dot" /> {registrationOpen ? 'STUDENT REGISTRATION' : `${PORTALS.find((p) => p.role === selected)?.title.toUpperCase()} PORTAL`}</span><h2>    {registrationOpen ? registrationDone ? 'Your ZIN ID is ready.' : 'Create your ZIN ID.' : <>Good to have<br />you back.</>}</h2><p className="muted login-intro">{registrationOpen ? registrationDone ? 'Your account is waiting for administrator approval. You can sign in with your ZIN ID after approval.' : 'Create your account with your name and a password. An administrator must approve it before you can sign in.' : 'Sign in with your campus account to continue.'}</p>
+    <section className="login-panel"><div className="login-content"><button className="back-link" onClick={() => { setSelected(null); setError(''); }}><ArrowRight className="back-arrow" size={15} /> All portals</button><span className="demo-pill"><span className="pulse-dot" /> {registrationOpen ? 'STUDENT REGISTRATION' : `${PORTALS.find((p) => p.role === selected)?.title.toUpperCase()} PORTAL`}</span><h2>{registrationOpen ? registrationDone ? 'Your ZIN ID is ready.' : 'Create your ZIN ID.' : <>Good to have<br />you back.</>}</h2><p className="muted login-intro">{registrationOpen ? registrationDone ? 'Your ZIN ID and login email are ready. Save them securely; you can sign in after approval.' : 'Create your account with your name and a password. An administrator must approve it before you can sign in.' : 'Sign in with your campus account to continue.'}</p>
       {registrationOpen ? registrationDone
-        ? <div className="success-message" role="status"><b>Your ZIN ID is ready.</b><p>Your student account is pending administrator approval. You can sign in only after the campus team approves your request.</p>{registrationAccount && <><div className="registration-credential"><small>ZIN ID</small><strong>{registrationAccount.zinId}</strong></div><div className="registration-credential"><small>ZYNGRAM LOGIN EMAIL</small><strong>{registrationAccount.email}</strong></div></>}{registrationNotice && <p>{registrationNotice}</p>}<button className="button-secondary" onClick={() => { setRegistrationOpen(false); setRegistrationDone(false); setRegistrationNotice(''); setRegistrationAccount(null); setError(''); }}>Back to sign in</button></div>
+        ? <section className="registration-success" aria-label="Your student account details">
+          <div className="registration-success-heading"><span className="registration-success-icon"><CheckCircle2 size={20} /></span><span><strong>ZIN ID created</strong><small>Keep these sign-in details somewhere safe.</small></span></div>
+          <div className="registration-approval"><Clock3 size={17} /><span><strong>Approval pending</strong><small>An administrator must approve your request before you can sign in.</small></span></div>
+          {registrationAccount && <div className="registration-credentials">
+            <div className="registration-credential"><div><small>YOUR ZIN ID</small><strong>{registrationAccount.zinId}</strong></div><button type="button" aria-label="Copy ZIN ID" onClick={() => copyRegistrationValue(registrationAccount.zinId, 'ZIN ID')}><Copy size={15} /><span>Copy</span></button></div>
+            <div className="registration-credential"><div><small>LOGIN EMAIL</small><strong>{registrationAccount.email}</strong></div><button type="button" aria-label="Copy login email" onClick={() => copyRegistrationValue(registrationAccount.email, 'Login email')}><Copy size={15} /><span>Copy</span></button></div>
+          </div>}
+          {copyMessage && <p className="registration-copy-message" role="status">{copyMessage}</p>}
+          {registrationNotice && <p className="registration-notice"><ShieldCheck size={14} />{registrationNotice}</p>}
+          <button className="button-dark full-width registration-continue" onClick={() => { setRegistrationOpen(false); setRegistrationDone(false); setRegistrationNotice(''); setRegistrationAccount(null); setCopyMessage(''); setError(''); }}>Continue to student sign in <ArrowRight size={16} /></button>
+        </section>
         : <form className="credential-form" onSubmit={submitRegistration}>
           <label htmlFor="registration-name">Full name</label><input id="registration-name" required minLength={2} maxLength={100} value={registration.name} onChange={(e) => setRegistration({ ...registration, name: e.target.value })} />
           <label htmlFor="registration-password">Create password</label><input id="registration-password" type="password" autoComplete="new-password" required minLength={12} maxLength={200} value={registration.password} onChange={(e) => setRegistration({ ...registration, password: e.target.value })} />
