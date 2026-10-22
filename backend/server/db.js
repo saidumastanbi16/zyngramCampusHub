@@ -77,6 +77,7 @@ export const databasePromise = client.connect().then(async () => {
       { zin_id: 1 },
       { unique: true, partialFilterExpression: { zin_id: { $type: 'string' } } }
     ),
+    database.collection('student_registration_requests').createIndex({ status: 1, user_id: 1 }),
     database.collection('student_registration_requests').createIndex({ status: 1, created_at: -1 }),
     database.collection('users').createIndex({ invite_token_hash: 1 }, { sparse: true }),
     database.collection('audit_log').createIndex({ created_at: -1 })

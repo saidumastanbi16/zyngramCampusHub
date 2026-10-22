@@ -451,6 +451,32 @@ app.get('/api/courses', requireUser, async (req, res) => {
   const names = new Map(trainers.map((trainer) => [trainer._id, trainer.name]));
   res.json(list.map((course) => ({ ...toApiDocument(course), trainer_name: names.get(course.trainer_id) || 'Campus trainer' })));
 });
+app.get('/api/course-learners', requireUser, requireRoles('trainer'), async (req, res) => {
+  const parsed = z.object({ courseId: z.string().min(1) }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose a course to load its learners.' });
+  const course = await courses.findOne({ _id: parsed.data.courseId, trainer_id: req.user._id });
+  if (!course) return res.status(404).json({ error: 'Course not found in your assigned scope.' });
+  const assignedIds = await tasks.distinct('learner_id', { course_id: course._id });
+  const approvedRegistrationIds = await studentRegistrationRequests.distinct('user_id', {
+    status: 'approved',
+    user_id: { $type: 'string' }
+  });
+  const registeredLearners = await users.find({
+    _id: { $in: approvedRegistrationIds },
+    role: 'student',
+    password_hash: { $type: 'string' }
+  }, { projection: { name: 1, avatar: 1, cohort: 1 } }).toArray();
+  const learnerIds = [...new Set([...assignedIds, ...registeredLearners.map((learner) => learner._id)])];
+  const learners = await users.find({ _id: { $in: learnerIds }, role: 'student' }, {
+    projection: { name: 1, avatar: 1, cohort: 1 }
+  }).sort({ name: 1 }).toArray();
+  res.json(learners.map((learner) => ({
+    id: String(learner._id),
+    name: learner.name,
+    avatar: learner.avatar,
+    cohort: learner.cohort
+  })));
+});
 app.get('/api/live-courses', requireUser, async (req, res) => {
   const filter = req.user.role === 'student'
     ? { status: 'published' }
@@ -635,7 +661,12 @@ app.post('/api/tasks', requireUser, requireRoles('trainer'), async (req, res) =>
   if (!parsed.success || !isCalendarDate(parsed.data?.dueDate || '')) return res.status(400).json({ error: 'Enter a valid course task, student, and due date.' });
   const course = await courses.findOne({ _id: parsed.data.courseId, trainer_id: req.user._id });
   const learner = await users.findOne({ _id: parsed.data.learnerId, role: 'student' });
-  if (!course || !learner || !await tasks.findOne({ course_id: course._id, learner_id: learner._id })) return res.status(404).json({ error: 'Student or course is not in your assigned scope.' });
+  const alreadyAssigned = course && learner && await tasks.findOne({ course_id: course._id, learner_id: learner._id });
+  const approvedRegistration = learner?.password_hash && await studentRegistrationRequests.findOne({
+    user_id: learner._id,
+    status: 'approved'
+  }, { projection: { _id: 1 } });
+  if (!course || !learner || (!alreadyAssigned && !approvedRegistration)) return res.status(404).json({ error: 'Student or course is not in your assigned scope.' });
   const task = { _id: `task-${crypto.randomUUID()}`, learner_id: learner._id, course_id: course._id, title: parsed.data.title,
     description: parsed.data.description, due_date: parsed.data.dueDate, status: 'todo', created_by: req.user._id, created_at: new Date().toISOString() };
   await tasks.insertOne(task);

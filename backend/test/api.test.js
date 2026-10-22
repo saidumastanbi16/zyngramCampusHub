@@ -459,6 +459,11 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal((await request('/auth/login', { method: 'POST', body: {
     role: 'student', email: registration.body.zinId, password: 'new-campus-password-2026'
   } })).status, 403);
+  const learnersBeforeApproval = await request('/course-learners?courseId=c-product', { cookie: trainerLogin.cookie });
+  assert.equal(learnersBeforeApproval.status, 200);
+  assert.equal(learnersBeforeApproval.body.some((learner) => learner.name === 'New Campus Learner'), false);
+  assert.equal((await request('/course-learners?courseId=c-product', { cookie: studentCookie })).status, 403);
+  assert.equal((await request('/course-learners?courseId=c-other', { cookie: trainerLogin.cookie })).status, 404);
   assert.equal((await request('/student-registration-requests', { cookie: studentCookie })).status, 403);
   assert.equal((await request('/student-registration-requests')).status, 401);
   assert.equal((await request('/student-registration-requests', { method: 'POST', body: {
@@ -478,7 +483,16 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal(approvedRegistration.body.user.email, registration.body.email);
   assert.equal(approvedRegistration.body.user.zin_id, registration.body.zinId);
   assert.equal(approvedRegistration.body.user.role, 'student');
+  assert.equal('registration_approved_at' in approvedRegistration.body.user, false);
   assert.equal('password_hash' in approvedRegistration.body.user, false);
+  const learnersAfterApproval = await request('/course-learners?courseId=c-product', { cookie: trainerLogin.cookie });
+  assert.equal(learnersAfterApproval.body.some((learner) => learner.name === 'New Campus Learner'), true);
+  const newLearnerTask = await request('/tasks', { method: 'POST', cookie: trainerLogin.cookie, body: {
+    courseId: 'c-product', learnerId: approvedRegistration.body.user.id, title: 'First live learner task',
+    description: 'Welcome this approved learner into the course with a first practice assignment.', dueDate: '2026-11-20'
+  } });
+  assert.equal(newLearnerTask.status, 201);
+  assert.equal((await request('/progress', { cookie: trainerLogin.cookie })).body.learners.some((learner) => learner.name === 'New Campus Learner'), true);
   const approvedStudentLogin = await request('/auth/login', { method: 'POST', body: {
     role: 'student', email: registration.body.zinId, password: 'new-campus-password-2026'
   } });

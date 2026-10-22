@@ -179,6 +179,7 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
   const [courseId, setCourseId] = useState(initialCourseId || data.courses[0]?.id || '');
   const [items, setItems] = useState([]);
   const [learners, setLearners] = useState([]);
+  const [learnersLoading, setLearnersLoading] = useState(false);
   const [sessions, setSessions] = useState([]);
   const [activeLessonId, setActiveLessonId] = useState('');
   const [error, setError] = useState('');
@@ -200,9 +201,25 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
     if (!isTrainer) api('/class-sessions').then(setSessions).catch((e) => setError(e.message));
   }, [isTrainer]);
   useEffect(() => {
-    if (isTrainer) api('/progress').then((report) => setLearners(report.learners)).catch((e) => setError(e.message));
-  }, [isTrainer]);
-  const assignedLearners = learners.filter((learner) => learner.course_ids.includes(courseId));
+    if (!isTrainer || !courseId) { setLearners([]); return; }
+    let active = true;
+    const loadLearners = async () => {
+      try {
+        const rows = await api(`/course-learners?courseId=${encodeURIComponent(courseId)}`);
+        if (active) setLearners(rows);
+      } catch (e) {
+        if (active) setError(e.message);
+      } finally {
+        if (active) setLearnersLoading(false);
+      }
+    };
+    setLearners([]);
+    setLearnersLoading(true);
+    loadLearners();
+    const refresh = window.setInterval(loadLearners, 30_000);
+    return () => { active = false; window.clearInterval(refresh); };
+  }, [isTrainer, courseId]);
+  const eligibleLearners = learners;
   function beginEdit(lesson) {
     setEditingId(lesson.id);
     setDraft({ title: lesson.title, description: lesson.description, weekNumber: lesson.week_number, position: lesson.position });
@@ -253,7 +270,7 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
       {resources.map((resource, index) => <div className="lesson-resource-input" key={index}><label>Resource type<select value={resource.type} onChange={(event) => setResources((current) => current.map((item, i) => i === index ? { ...item, type: event.target.value } : item))}><option value="video">Video</option><option value="pdf">PDF</option><option value="note">Notes</option><option value="link">Link</option></select></label><label>Resource name<input maxLength={100} value={resource.title} onChange={(event) => setResources((current) => current.map((item, i) => i === index ? { ...item, title: event.target.value } : item))} /></label><label>HTTPS resource URL<input type="url" pattern="https://.+" value={resource.url} onChange={(event) => setResources((current) => current.map((item, i) => i === index ? { ...item, url: event.target.value } : item))} /></label>{resources.length > 1 && <button className="icon-button" type="button" aria-label="Remove resource" onClick={() => setResources((current) => current.filter((_, i) => i !== index))}><X size={15} /></button>}</div>)}
       <label>Upload file (PDF, MP4/WebM video, or text · max 15 MB)<input type="file" accept="application/pdf,video/mp4,video/webm,text/plain,.pdf,.mp4,.webm,.txt" onChange={(event) => setLessonFile(event.target.files?.[0] || null)} /></label>{lessonFile && <small>{lessonFile.name} · {Math.ceil(lessonFile.size / 1024)} KB</small>}
       <div className="modal-actions"><button className="button-secondary" type="button" onClick={() => setResources((current) => [...current, { type: 'link', title: '', url: '' }])}><Plus size={14} /> Add link</button><button className="button-primary" disabled={busy || !courseId || (lessonFile && lessonFile.size > 15 * 1024 * 1024)}>{busy ? 'Saving…' : editingId ? 'Save lesson' : 'Publish lesson'} <ArrowRight size={15} /></button></div></form>}
-    {isTrainer && <form className="panel practice-task-form" onSubmit={assignTask}><div className="panel-heading"><div><h2>Assign practice task</h2><p>Students must already be assigned to this course.</p></div></div><div className="form-grid"><label>Student<select required value={taskDraft.learnerId} onChange={(event) => setTaskDraft({ ...taskDraft, learnerId: event.target.value })}><option value="">Choose a learner</option>{assignedLearners.map((learner) => <option key={learner.id} value={learner.id}>{learner.name}</option>)}</select></label><label>Task title<input required minLength={3} maxLength={120} value={taskDraft.title} onChange={(event) => setTaskDraft({ ...taskDraft, title: event.target.value })} /></label><label>Due date<input required type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft({ ...taskDraft, dueDate: event.target.value })} /></label><label>Instructions<input required minLength={5} maxLength={1500} value={taskDraft.description} onChange={(event) => setTaskDraft({ ...taskDraft, description: event.target.value })} /></label></div><button className="button-secondary" disabled={busy || !assignedLearners.length}>Assign task <ArrowRight size={14} /></button></form>}
+    {isTrainer && <form className="panel practice-task-form" onSubmit={assignTask}><div className="panel-heading"><div><h2>Assign practice task</h2><p>Approved students are added automatically. Assigning their first task adds them to this course.</p></div></div><div className="form-grid"><label>Student<select required value={taskDraft.learnerId} onChange={(event) => setTaskDraft({ ...taskDraft, learnerId: event.target.value })} disabled={learnersLoading}><option value="">{learnersLoading ? 'Loading learners…' : eligibleLearners.length ? 'Choose a learner' : 'No approved students yet'}</option>{eligibleLearners.map((learner) => <option key={learner.id} value={learner.id}>{learner.name}</option>)}</select></label><label>Task title<input required minLength={3} maxLength={120} value={taskDraft.title} onChange={(event) => setTaskDraft({ ...taskDraft, title: event.target.value })} /></label><label>Due date<input required type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft({ ...taskDraft, dueDate: event.target.value })} /></label><label>Instructions<input required minLength={5} maxLength={1500} value={taskDraft.description} onChange={(event) => setTaskDraft({ ...taskDraft, description: event.target.value })} /></label></div><button className="button-secondary" disabled={busy || !eligibleLearners.length}>Assign task <ArrowRight size={14} /></button></form>}
     {!isTrainer && upcomingSessions.length > 0 && <section className="live-class-list"><div className="live-class-heading"><span><b>Live classes</b><small>Join a scheduled session with your trainer.</small></span><Badge tone="soon">{upcomingSessions.length} upcoming</Badge></div>{upcomingSessions.map((session) => <article className="live-class-row" key={session.id}><span className="live-class-icon"><CalendarDays size={17} /></span><span><b>{session.topic}</b><small>{new Date(session.starts_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</small></span><a className="button-secondary small" href={session.meeting_url} target="_blank" rel="noopener noreferrer">Join class <ArrowUpRight size={14} /></a></article>)}</section>}
     {!isTrainer && items.length > 0 ? <div className="course-learning-layout"><section className="course-player-column"><article className="course-player panel">
       {activeVideo ? <div className="video-frame">{embeddedVideo ? <iframe src={embeddedVideo} title={activeVideo.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen /> : <video controls preload="metadata" src={activeVideo.url} onEnded={() => activeLesson && !activeLesson.completed && completeLesson(activeLesson)}><track kind="captions" />Your browser does not support video playback.</video>}</div> : <div className="video-placeholder"><BookOpen size={28} /><span>LESSON {activeLesson?.position || ''}</span><b>{activeLesson?.title || 'Choose a lesson'}</b></div>}
