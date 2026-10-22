@@ -324,6 +324,7 @@ kbd { display: flex; align-items: center; gap: 2px; padding: 2px 4px; border: 1p
 .registration-actions { display: flex; gap: 12px; }
 .registration-actions .text-link { padding: 0; border: 0; background: none; font-size: 9px; }
 .success-message .button-secondary { margin-left: auto; }
+.registration-credential { display: grid; gap: 5px; margin: 10px 0; padding: 11px; border-radius: 7px; background: #edf3ee; }.registration-credential small { color: #799087; font: 8px var(--mono); letter-spacing: .6px; }.registration-credential strong { color: #304947; font-size: 12px; overflow-wrap: anywhere; }.registration-hint { margin: 3px 0; color: #89877f; font-size: 9px; line-height: 1.5; }
 .managed-user { display: flex; align-items: center; gap: 9px; }
 .managed-user>span:last-child { display: grid; gap: 3px; }
 .managed-user b { color: #47463f; font-size: 10px; font-weight: 600; }

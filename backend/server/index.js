@@ -64,6 +64,25 @@ function publicUser(user) {
   const { password_hash, invite_token_hash, invite_expires_at, session_version, _id, ...safe } = user;
   return { ...safe, _id, id: String(_id) };
 }
+function createPasswordHash(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return `scrypt$${salt}$${crypto.scryptSync(password, salt, 64).toString('hex')}`;
+}
+async function createZinId(name) {
+  const firstName = name.trim().split(/\s+/)[0].replace(/[^a-z]/gi, '').toUpperCase();
+  const prefix = firstName.slice(0, 2).padEnd(2, firstName[0] || 'Z');
+  const suffix = firstName.slice(-2).padStart(2, firstName[0] || 'Z');
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const digits = Array.from({ length: 12 }, () => crypto.randomInt(0, 10)).join('');
+    const zinId = `${prefix}${digits}${suffix}`;
+    const [existingUser, existingRequest] = await Promise.all([
+      users.findOne({ zin_id: zinId }, { projection: { _id: 1 } }),
+      studentRegistrationRequests.findOne({ zin_id: zinId }, { projection: { _id: 1 } })
+    ]);
+    if (!existingUser && !existingRequest) return zinId;
+  }
+  throw new Error('A unique ZIN ID could not be generated. Please try again.');
+}
 function isCalendarDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -287,11 +306,16 @@ app.post('/api/admin/recover', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   const parsed = z.object({
     role: z.enum(roles),
-    email: z.string().trim().email().max(254),
+    email: z.string().trim().min(1).max(254),
     password: z.string().min(1).max(200)
   }).safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid campus email and password.' });
-  const user = await users.findOne({ email: parsed.data.email.toLowerCase() });
+  if (!parsed.success || (parsed.success && parsed.data.role !== 'student' && !z.string().email().safeParse(parsed.data.email).success)) {
+    return res.status(400).json({ error: 'Enter a valid campus email or student ZIN ID and password.' });
+  }
+  const identifier = parsed.data.email.toLowerCase();
+  const user = await users.findOne(parsed.data.role === 'student' && !identifier.includes('@')
+    ? { zin_id: identifier.toUpperCase() }
+    : { email: identifier });
   const encoded = user?.password_hash || '';
   const [algorithm, salt, hash] = encoded.split('$');
   let passwordMatches = false;
@@ -301,6 +325,14 @@ app.post('/api/auth/login', async (req, res) => {
     passwordMatches = actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
   }
   if (!user || user.role !== parsed.data.role || !passwordMatches) {
+    if (parsed.data.role === 'student') {
+      const registration = await studentRegistrationRequests.findOne({
+        $or: [{ email: identifier }, { zin_id: identifier.toUpperCase() }],
+        status: { $in: ['pending', 'rejected'] }
+      }, { projection: { status: 1 } });
+      if (registration?.status === 'pending') return res.status(403).json({ error: 'Your ZIN ID is waiting for administrator approval. You can sign in after your request is approved.' });
+      if (registration?.status === 'rejected') return res.status(403).json({ error: 'Your student registration request was declined. Please contact campus support.' });
+    }
     return res.status(401).json({ error: 'Email or password is incorrect for this portal.' });
   }
   await issueSession(user, res);
@@ -1311,16 +1343,20 @@ app.post('/api/admin/demo-data', requireUser, requireRoles('admin'), async (req,
 app.post('/api/student-registration-requests', async (req, res) => {
   const parsed = z.object({
     name: z.string().trim().min(2).max(100),
-    email: z.string().trim().email().max(254),
-    cohort: z.string().trim().min(2).max(100)
+    password: z.string().min(12).max(200),
+    cohort: z.string().trim().min(2).max(100).default('Cohort 08')
   }).safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Enter your name, a valid email address, and cohort.' });
-  const email = parsed.data.email.toLowerCase();
-  if (await users.findOne({ email })) return res.status(409).json({ error: 'An account already uses this email. Contact campus support if you need access.' });
+  if (!parsed.success) return res.status(400).json({ error: 'Enter your name and a password between 12 and 200 characters.' });
+  const zinId = await createZinId(parsed.data.name);
+  const email = `${zinId.toLowerCase()}@zyngram.com`;
+  if (await users.findOne({ email })) return res.status(409).json({ error: 'An account already uses this ZIN ID. Please submit again.' });
   const now = new Date().toISOString();
+  const { password, ...registrationFields } = parsed.data;
   const request = {
     _id: `registration-${crypto.randomUUID()}`,
-    ...parsed.data,
+    ...registrationFields,
+    password_hash: createPasswordHash(password),
+    zin_id: zinId,
     email,
     status: 'pending',
     created_at: now
@@ -1338,19 +1374,17 @@ app.post('/api/student-registration-requests', async (req, res) => {
     notification = { sent: false, message: 'Your request is saved, but administrator email notifications are not configured.' };
   } else {
     try {
-      await sendStudentRegistrationNotification({
-        adminEmail, name: request.name, email: request.email, cohort: request.cohort, requestId: request._id
-      });
+      await sendStudentRegistrationNotification({ adminEmail, name: request.name, email, cohort: request.cohort, requestId: request._id });
       notification = { sent: true };
     } catch (error) {
       console.error('Student registration notification failed:', error);
       notification = { sent: false, message: 'Your request is saved, but the administrator email could not be delivered.' };
     }
   }
-  res.status(201).json({ ok: true, requestId: request._id, notification });
+  res.status(201).json({ ok: true, requestId: request._id, zinId, email, notification });
 });
 app.get('/api/student-registration-requests', requireUser, requireRoles('admin'), async (_req, res) => {
-  const requests = await studentRegistrationRequests.find({}).sort({ created_at: -1 }).toArray();
+  const requests = await studentRegistrationRequests.find({}, { projection: { password_hash: 0 } }).sort({ created_at: -1 }).toArray();
   res.json(requests.map(toApiDocument));
 });
 app.patch('/api/student-registration-requests/:id', requireUser, requireRoles('admin'), async (req, res) => {
@@ -1375,7 +1409,8 @@ app.patch('/api/student-registration-requests/:id', requireUser, requireRoles('a
     role: 'student',
     cohort: registration.cohort,
     avatar: registration.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
-    password_hash: null,
+    ...(registration.password_hash ? { password_hash: registration.password_hash } : { password_hash: null }),
+    ...(registration.zin_id ? { zin_id: registration.zin_id } : {}),
     created_at: reviewedAt
   };
   const claimed = await studentRegistrationRequests.updateOne(
@@ -1394,10 +1429,10 @@ app.patch('/api/student-registration-requests/:id', requireUser, requireRoles('a
     throw error;
   }
   await recordAudit(req.user._id, 'student_registration.approve', 'student_registration_request', registration._id);
-  res.json({ id: registration._id, status: 'approved', user: publicUser(person) });
+  res.json({ id: registration._id, status: 'approved', credentials_ready: Boolean(registration.password_hash), user: publicUser(person) });
 });
 app.get('/api/users', requireUser, requireRoles('admin'), async (_req, res) => {
-  const allUsers = await users.find({}, { projection: { name: 1, email: 1, role: 1, cohort: 1, avatar: 1, created_at: 1, password_hash: 1 } }).sort({ role: 1, name: 1 }).toArray();
+  const allUsers = await users.find({}, { projection: { name: 1, email: 1, role: 1, cohort: 1, avatar: 1, zin_id: 1, created_at: 1, password_hash: 1 } }).sort({ role: 1, name: 1 }).toArray();
   res.json(allUsers.map((user) => ({ ...publicUser(user), account_status: user.password_hash ? 'active' : 'setup required' })));
 });
 app.post('/api/users', requireUser, requireRoles('admin'), async (req, res) => {
