@@ -1427,9 +1427,7 @@ app.post('/api/users', requireUser, requireRoles('admin'), async (req, res) => {
 app.post('/api/users/:id/invite', requireUser, requireRoles('admin'), async (req, res) => {
   const person = await users.findOne({ _id: req.params.id, password_hash: null });
   if (!person) return res.status(404).json({ error: 'Account not found or credentials have already been set.' });
-  if (production && !invitationMailConfigured()) {
-    return res.status(503).json({ error: 'Production invitation email is not configured. Set the SMTP environment variables before sending invitations.' });
-  }
+  const mailConfigured = invitationMailConfigured();
   const token = crypto.randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -1444,7 +1442,7 @@ app.post('/api/users/:id/invite', requireUser, requireRoles('admin'), async (req
   });
   if (!invitation.modifiedCount) return res.status(404).json({ error: 'Account credentials were set before the invitation could be issued.' });
   try {
-    if (production || invitationMailConfigured()) await sendInvitationEmail({ email: person.email, name: person.name, invitationUrl: url });
+    if (mailConfigured) await sendInvitationEmail({ email: person.email, name: person.name, invitationUrl: url });
   } catch (error) {
     await users.updateOne({ _id: person._id, invite_token_hash: tokenHash }, {
       $unset: { invite_token_hash: '', invite_expires_at: '' }
@@ -1452,11 +1450,11 @@ app.post('/api/users/:id/invite', requireUser, requireRoles('admin'), async (req
     console.error('Invitation delivery failed:', error);
     return res.status(503).json({ error: 'The invitation could not be delivered. Verify SMTP settings and try again.' });
   }
-  await recordAudit(req.user._id, 'user.invite', 'user', person._id);
+  await recordAudit(req.user._id, mailConfigured ? 'user.invite' : 'user.invite.manual', 'user', person._id);
   res.json({
     ok: true,
     expires_at: expiresAt.toISOString(),
-    ...(production || invitationMailConfigured() ? {} : { development_invitation_url: url })
+    ...(mailConfigured ? {} : production ? { manual_invitation_url: url } : { development_invitation_url: url })
   });
 });
 app.get('/api/audit', requireUser, requireRoles('admin'), async (_req, res) => {
