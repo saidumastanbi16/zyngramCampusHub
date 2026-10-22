@@ -83,6 +83,35 @@ async function uploadResume(path, cookie) {
   const response = await fetch(`${base}${path}`, { method: 'POST', headers: { Cookie: cookie }, body: form });
   return { status: response.status, body: await response.json() };
 }
+function createPdf(text) {
+  const stream = `BT /F1 14 Tf 50 100 Td (${text}) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (let index = 0; index < objects.length; index += 1) {
+    offsets.push(Buffer.byteLength(pdf));
+    pdf += `${index + 1} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const crossReferenceOffset = Buffer.byteLength(pdf);
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${crossReferenceOffset}\n%%EOF`;
+  return Buffer.from(pdf);
+}
+async function uploadStudentResume(path, cookie, buffer) {
+  const form = new FormData();
+  form.append('resume', new Blob([buffer], { type: 'application/pdf' }), 'student-resume.pdf');
+  const response = await fetch(`${base}${path}`, { method: 'POST', headers: { Cookie: cookie }, body: form });
+  return { status: response.status, body: await response.json() };
+}
+async function applyWithSavedResume(path, cookie) {
+  const response = await fetch(`${base}${path}`, { method: 'POST', headers: { Cookie: cookie }, body: new FormData() });
+  return { status: response.status, body: await response.json() };
+}
 async function uploadLessonFile(path, cookie) {
   const form = new FormData();
   form.append('file', new Blob([Buffer.from('%PDF-1.7\nLesson handout')], { type: 'application/pdf' }), 'lesson-handout.pdf');
@@ -368,11 +397,29 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal((await request('/exams', { cookie: trainerLogin.cookie })).body.find((exam) => exam.id === createdExam.body.id).attempts[0].learner_name, 'Aarav Reddy');
 
   const internshipPayload = {
-    title: 'Frontend engineering intern', organization: 'Zyngram Studio', description: 'Build and test accessible web features with the product team.', applyBy: '2026-12-01', courseId: 'c-product'
+    title: 'Frontend engineering intern', organization: 'Zyngram Studio', description: 'Build and test accessible web features with the product team.', applyBy: '2026-12-01', courseId: 'c-product', skills: ['React', 'JavaScript', 'Git']
   };
   const placementPayload = {
-    title: 'Product designer', organization: 'CampusWorks', description: 'Design and improve the student journey for a product team.', applyBy: '2026-12-10', courseId: 'c-product', type: 'placement', location: 'Hyderabad', workMode: 'Hybrid', stage: 'screening', salary: '₹12 LPA'
+    title: 'Product designer', organization: 'CampusWorks', description: 'Design and improve the student journey for a product team.', applyBy: '2026-12-10', courseId: 'c-product', skills: ['Figma', 'UX Research'], type: 'placement', location: 'Hyderabad', workMode: 'Hybrid', stage: 'screening', salary: '₹12 LPA'
   };
+  const resumeBeforeUpload = await request('/student-resume', { cookie: studentCookie });
+  assert.equal(resumeBeforeUpload.status, 200);
+  assert.equal(resumeBeforeUpload.body.resume, null);
+  assert.equal((await request('/student-resume', { method: 'POST', cookie: trainerLogin.cookie })).status, 403);
+  const invalidStudentResume = await uploadStudentResume('/student-resume', studentCookie, Buffer.from('%PDF-not-a-readable-pdf'));
+  assert.equal(invalidStudentResume.status, 400);
+  const uploadedStudentResume = await uploadStudentResume('/student-resume', studentCookie, createPdf('React JavaScript CSS Node.js'));
+  assert.equal(uploadedStudentResume.status, 200);
+  assert.equal(uploadedStudentResume.body.resume.text_available, true);
+  assert.deepEqual(uploadedStudentResume.body.resume.matched_skills, []);
+  const savedStudentResume = await request('/student-resume', { cookie: studentCookie });
+  assert.equal(savedStudentResume.body.resume.filename, 'student-resume.pdf');
+  assert.equal(savedStudentResume.body.resume.page_count, 1);
+  assert.equal((await request('/student-resume/file', { cookie: peerLogin.cookie })).status, 404);
+  const studentResumePdf = await fetch(`${base}/student-resume/file`, { headers: { Cookie: studentCookie } });
+  assert.equal(studentResumePdf.status, 200);
+  assert.equal(studentResumePdf.headers.get('content-type'), 'application/pdf');
+  assert.match(await studentResumePdf.text(), /^%PDF-/);
   assert.equal((await request('/internships', { method: 'POST', cookie: trainerLogin.cookie, body: internshipPayload })).status, 403);
   const placementLogin = await request('/auth/login', { method: 'POST', body: {
     role: 'coordinator', email: 'kiran.demo@example.test', password
@@ -386,7 +433,12 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal(placementInList.location, 'Hyderabad');
   const internship = await request('/internships', { method: 'POST', cookie: placementLogin.cookie, body: internshipPayload });
   assert.equal(internship.status, 201);
-  const application = await uploadResume(`/internships/${internship.body.id}/apply`, studentCookie);
+  const recommendedOpportunities = await request('/internships', { cookie: studentCookie });
+  assert.equal(recommendedOpportunities.body[0].id, internship.body.id);
+  assert.deepEqual(recommendedOpportunities.body[0].resume_match.matched_skills, ['React', 'JavaScript']);
+  assert.equal(recommendedOpportunities.body[0].resume_match.recommended, true);
+  assert.equal(recommendedOpportunities.body.find((item) => item.id === placementOpportunity.body.id).resume_match.recommended, false);
+  const application = await applyWithSavedResume(`/internships/${internship.body.id}/apply`, studentCookie);
   assert.equal(application.status, 201);
   assert.equal(application.body.has_resume, true);
   assert.equal((await uploadResume(`/internships/${internship.body.id}/apply`, studentCookie)).status, 409);

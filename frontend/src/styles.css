@@ -821,6 +821,7 @@ kbd { color: #9aa8b8; border-color: #39485b; background: #202c3a; }
 .readiness-review-form, .resume-submit-form { display: grid; gap: 10px; padding-top: 10px; border-top: 1px solid #2b3747; }
 .readiness-feedback { display: grid; gap: 4px; margin: 0; padding: 9px 11px; color: #b9c5d3; border-radius: 6px; background: #243449; font-size: 10px; line-height: 1.5; }
 .readiness-feedback b { color: #e6edf6; }
+.student-resume-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, .8fr); gap: 18px; padding: 17px; margin: 16px 0; border-color: #334455; background: linear-gradient(125deg, #1b302f, #1a2532 68%); }.student-resume-panel h2 { margin: 0 0 5px; color: #e6edf6; font-size: 15px; }.student-resume-panel .eyebrow { margin-bottom: 5px; color: #8ec9ac; font-size: 8px; }.student-resume-panel .muted { max-width: 560px; color: #aab8c6; font-size: 10px; }.student-resume-upload { display: grid; align-content: center; gap: 9px; padding: 12px; border: 1px dashed #496052; border-radius: 8px; background: #17252a80; }.student-resume-upload label { display: grid; gap: 7px; color: #d0dbe5; font-size: 10px; }.student-resume-upload input { max-width: 100%; color: #aebdca; font-size: 10px; }.student-resume-upload small { color: #a6b6c4; font-size: 9px; overflow-wrap: anywhere; }.student-resume-upload .resume-help { color: #f0c781; line-height: 1.5; }.student-resume-status { display: flex; align-items: center; gap: 9px; padding: 9px 10px; margin-top: 12px; color: #8be0b9; border: 1px solid #344d43; border-radius: 7px; background: #1b302c; }.student-resume-status>span { display: grid; flex: 1; min-width: 0; gap: 3px; }.student-resume-status b { color: #e6edf6; font-size: 10px; overflow-wrap: anywhere; }.student-resume-status small { color: #a0adbd; font-size: 9px; }.student-resume-status .text-link { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }.resume-match-banner { display: flex; align-items: start; gap: 9px; padding: 10px 11px; color: #8be0b9; border: 1px solid #345548; border-radius: 7px; background: #203c36; }.resume-match-banner>svg { flex: 0 0 auto; margin-top: 1px; }.resume-match-banner>span { display: grid; gap: 3px; }.resume-match-banner b { color: #b5ebce; font-size: 10px; }.resume-match-banner small { color: #a9c7b6; font-size: 9px; line-height: 1.5; }
 .mock-interview-list { padding: 14px 16px; margin-top: 13px; }
 .mock-interview-list h2, .interview-create h3 { margin: 0; color: #e6edf6; font-size: 13px; }
 .tutorial-dashboard-strip { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto auto; align-items: center; gap: 13px; padding: 15px; margin: 14px 0; border: 1px solid #344354; border-left: 3px solid #d59b62; border-radius: 7px; background: linear-gradient(112deg, #1b302f, #1b2733 68%); }
@@ -949,6 +950,9 @@ kbd { color: #9aa8b8; border-color: #39485b; background: #202c3a; }
 }
 @media (max-width: 680px) {
   .form-grid, .exam-options { grid-template-columns: 1fr; }
+  .student-resume-panel { grid-template-columns: 1fr; gap: 12px; padding: 13px; }
+  .student-resume-status { align-items: flex-start; flex-wrap: wrap; }
+  .student-resume-status .text-link { margin-left: 25px; }
   .tutorial-course-grid, .live-course-grid, .tutorial-study-layout { grid-template-columns: 1fr; }
   .tutorial-library-hero, .tutorial-detail-hero, .live-courses-masthead { min-height: 170px; padding: 20px; }
   .tutorial-library-hero h1, .tutorial-detail-hero h1, .live-courses-masthead h1 { font-size: 29px; }

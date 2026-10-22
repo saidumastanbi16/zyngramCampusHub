@@ -6,6 +6,7 @@ import multer from 'multer';
 import { Binary } from 'mongodb';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { client, databasePromise } from './db.js';
 import { provisionDemoData } from './demo-data.js';
 import { invitationMailConfigured, sendInvitationEmail, sendStudentRegistrationNotification } from './mailer.js';
@@ -43,6 +44,7 @@ const learningWeeks = db.collection('learning_weeks');
 const studentProgress = db.collection('student_progress');
 const notifications = db.collection('notifications');
 const resumeFiles = db.collection('resume_files');
+const studentResumeFiles = db.collection('student_resume_files');
 const appSettings = db.collection('app_settings');
 const resumeUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 const lessonUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
@@ -67,6 +69,35 @@ function publicUser(user) {
 function createPasswordHash(password) {
   const salt = crypto.randomBytes(16).toString('hex');
   return `scrypt$${salt}$${crypto.scryptSync(password, salt, 64).toString('hex')}`;
+}
+class ResumePdfError extends Error {}
+async function extractResumeText(buffer) {
+  let document;
+  try {
+    document = await getDocument({ data: new Uint8Array(buffer), useSystemFonts: true, isEvalSupported: false }).promise;
+    if (document.numPages > 20) throw new ResumePdfError('Resume PDF must have 20 pages or fewer.');
+    const pages = await Promise.all(Array.from({ length: document.numPages }, async (_, index) => {
+      const page = await document.getPage(index + 1);
+      const content = await page.getTextContent();
+      return content.items.map((item) => 'str' in item ? item.str : '').join(' ');
+    }));
+    return { text: pages.join(' ').slice(0, 100_000), pageCount: document.numPages };
+  } catch (error) {
+    if (error instanceof ResumePdfError) throw error;
+    throw new ResumePdfError('This PDF could not be read. Upload a readable, non-password-protected PDF.');
+  } finally {
+    await document?.destroy();
+  }
+}
+function normalizeSkill(value) {
+  return value.toLocaleLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function matchResumeSkills(resumeText, skills = []) {
+  const normalizedResume = ` ${normalizeSkill(resumeText)} `;
+  return [...new Set(skills.filter((skill) => {
+    const normalizedSkill = normalizeSkill(skill);
+    return normalizedSkill && normalizedResume.includes(` ${normalizedSkill} `);
+  }))];
 }
 async function createZinId(name) {
   const firstName = name.trim().split(/\s+/)[0].replace(/[^a-z]/gi, '').toUpperCase();
@@ -1099,19 +1130,92 @@ app.get('/api/internships', requireUser, async (req, res) => {
   const placementStaff = ['coordinator', 'admin'].includes(req.user.role);
   const filter = req.user.role === 'trainer' ? { course_id: { $in: (await courses.find({ trainer_id: req.user._id }, { projection: { _id: 1 } }).toArray()).map((course) => course._id) } } : {};
   const rows = await internships.find(filter).sort({ apply_by: 1 }).toArray();
+  const savedResume = req.user.role === 'student' ? await studentResumeFiles.findOne({ learner_id: req.user._id }) : null;
+  const resumeText = savedResume ? (await extractResumeText(savedResume.data.value())).text : '';
   const applications = req.user.role === 'student'
     ? await internshipApplications.find({ learner_id: req.user._id, internship_id: { $in: rows.map((item) => item._id) } }).toArray()
     : placementStaff ? await internshipApplications.find({ internship_id: { $in: rows.map((item) => item._id) } }).sort({ applied_at: -1 }).toArray() : [];
   const learners = req.user.role === 'student' ? [] : await users.find({ _id: { $in: [...new Set(applications.map((item) => item.learner_id))] } }, { projection: { name: 1 } }).toArray();
   const names = new Map(learners.map((learner) => [learner._id, learner.name]));
   const courseNames = new Map((await courses.find({ _id: { $in: rows.map((item) => item.course_id).filter(Boolean) } }, { projection: { title: 1 } }).toArray()).map((course) => [course._id, course.title]));
-  res.json(rows.map((item) => ({ ...toApiDocument(item), course_title: courseNames.get(item.course_id) || 'All courses',
+  const opportunities = rows.map((item) => {
+    const matchedSkills = req.user.role === 'student' && resumeText ? matchResumeSkills(resumeText, item.skills) : [];
+    return { ...toApiDocument(item), course_title: courseNames.get(item.course_id) || 'All courses',
+    ...(req.user.role === 'student' ? {
+      resume_match: {
+        recommended: matchedSkills.length > 0,
+        matched_skills: matchedSkills,
+        score: item.skills?.length ? Math.round((matchedSkills.length / item.skills.length) * 100) : 0
+      }
+    } : {}),
     application: req.user.role === 'student' ? (() => {
       const application = applications.find((record) => record.internship_id === item._id);
       return application ? { id: String(application._id), status: application.status, applied_at: application.applied_at, has_resume: Boolean(application.resume_id) } : null;
     })() : undefined,
     applications: !placementStaff ? undefined : applications.filter((application) => application.internship_id === item._id).map((application) => ({ ...toApiDocument(application), learner_name: names.get(application.learner_id) || 'Student', resume_url: `/api/internships/applications/${application._id}/resume` }))
-  })));
+  };
+  });
+  res.json(req.user.role === 'student'
+    ? opportunities.sort((left, right) => Number(right.resume_match.recommended) - Number(left.resume_match.recommended) || left.apply_by.localeCompare(right.apply_by))
+    : opportunities);
+});
+app.get('/api/student-resume', requireUser, requireRoles('student'), async (req, res) => {
+  const resume = await studentResumeFiles.findOne({ learner_id: req.user._id }, { projection: { filename: 1, size: 1, uploaded_at: 1, page_count: 1, text_available: 1 } });
+  res.json({ resume: resume ? {
+    filename: resume.filename,
+    size: resume.size,
+    uploaded_at: resume.uploaded_at,
+    page_count: resume.page_count,
+    text_available: resume.text_available
+  } : null });
+});
+app.get('/api/student-resume/file', requireUser, requireRoles('student'), async (req, res) => {
+  const resume = await studentResumeFiles.findOne({ learner_id: req.user._id });
+  if (!resume) return res.status(404).json({ error: 'Upload a resume before opening it.' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(resume.filename)}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.send(resume.data.value());
+});
+app.post('/api/student-resume', requireUser, requireRoles('student'), resumeUpload.single('resume'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose a PDF resume to upload (maximum 5 MB).' });
+  if (req.file.mimetype !== 'application/pdf' || req.file.buffer.subarray(0, 5).toString() !== '%PDF-') {
+    return res.status(400).json({ error: 'Resume must be a valid PDF file.' });
+  }
+  let parsedResume;
+  try {
+    parsedResume = await extractResumeText(req.file.buffer);
+  } catch (error) {
+    if (error instanceof ResumePdfError) return res.status(400).json({ error: error.message });
+    throw error;
+  }
+  const uploadedAt = new Date().toISOString();
+  await studentResumeFiles.updateOne({ learner_id: req.user._id }, {
+    $set: {
+      filename: req.file.originalname.replace(/[^\w.-]/g, '_').slice(-120) || 'resume.pdf',
+      content_type: 'application/pdf',
+      data: new Binary(req.file.buffer),
+      size: req.file.size,
+      page_count: parsedResume.pageCount,
+      text_available: Boolean(parsedResume.text.trim()),
+      uploaded_at: uploadedAt,
+      updated_at: uploadedAt
+    },
+    $setOnInsert: { _id: `student-resume-${crypto.randomUUID()}`, created_at: uploadedAt }
+  }, { upsert: true });
+  const matches = parsedResume.text ? (await internships.find({}, { projection: { skills: 1 } }).toArray())
+    .flatMap((opportunity) => matchResumeSkills(parsedResume.text, opportunity.skills)) : [];
+  await recordAudit(req.user._id, 'student.resume.upload', 'student_resume', req.user._id, { size: req.file.size });
+  res.json({
+    ok: true,
+    resume: {
+      filename: req.file.originalname.replace(/[^\w.-]/g, '_').slice(-120) || 'resume.pdf',
+      size: req.file.size,
+      uploaded_at: uploadedAt,
+      text_available: Boolean(parsedResume.text.trim()),
+      matched_skills: [...new Set(matches)]
+    }
+  });
 });
 app.post('/api/internships', requireUser, requireRoles('coordinator', 'admin'), async (req, res) => {
   const parsed = z.object({
@@ -1151,13 +1255,18 @@ app.post('/api/internships/:id/apply', requireUser, requireRoles('student'), res
   const item = await internships.findOne({ _id: req.params.id });
   if (!item) return res.status(404).json({ error: 'Internship opportunity not found.' });
   if (item.apply_by < new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: 'The application deadline has passed.' });
-  if (!req.file) return res.status(400).json({ error: 'Attach your resume as a PDF file, up to 5 MB.' });
-  if (req.file.mimetype !== 'application/pdf' || req.file.buffer.subarray(0, 5).toString() !== '%PDF-') {
+  const savedResume = req.file ? null : await studentResumeFiles.findOne({ learner_id: req.user._id });
+  if (!req.file && !savedResume) return res.status(400).json({ error: 'Upload a resume PDF before applying.' });
+  if (req.file && (req.file.mimetype !== 'application/pdf' || req.file.buffer.subarray(0, 5).toString() !== '%PDF-')) {
     return res.status(400).json({ error: 'Resume must be a valid PDF file.' });
   }
+  const resumeBuffer = req.file?.buffer || savedResume.data.value();
   const appliedAt = new Date().toISOString();
   const application = { _id: `application-${crypto.randomUUID()}`, internship_id: item._id, learner_id: req.user._id, status: 'applied', applied_at: appliedAt, resume_id: `resume-${crypto.randomUUID()}` };
-  await resumeFiles.insertOne({ _id: application.resume_id, application_id: application._id, filename: 'resume.pdf', content_type: 'application/pdf', data: new Binary(req.file.buffer), size: req.file.size, created_at: appliedAt });
+  await resumeFiles.insertOne({
+    _id: application.resume_id, application_id: application._id, filename: req.file?.originalname || savedResume.filename,
+    content_type: 'application/pdf', data: new Binary(resumeBuffer), size: resumeBuffer.length, created_at: appliedAt
+  });
   try { await internshipApplications.insertOne(application); } catch (error) {
     await resumeFiles.deleteOne({ _id: application.resume_id });
     if (error.code === 11000) return res.status(409).json({ error: 'You already applied for this internship.' });
