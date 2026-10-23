@@ -60,7 +60,24 @@ To provision the requested local demo students with one-time generated credentia
 
 To give local demo students a submit-ready assignment, run `npm run assign-student-work`. It assigns a practical project from Full Stack Web Development, Digital Marketing, or Finance Fundamentals to each student without existing open work, preserves submitted work, and records the assignment in the audit log. Students submit a viewable HTTPS project link and an optional trainer note from Tasks & feedback. This script is disabled in production.
 
-### Public deployment (Render + MongoDB Atlas)
+### Public deployment (Railway + MongoDB Atlas)
+
+The app can run as a single Railway service: Railway builds the React frontend, then starts the Express server, which serves both the frontend and `/api/*` routes on the same domain. MongoDB Atlas remains the persistent database.
+
+To deploy this existing project to Railway without losing its current records:
+
+1. Sign in to [Railway](https://railway.com/) and create a new project from the GitHub repository `saidumastanbi16/zyngramCampusHub`, using the `main` branch. Railway reads `railway.json`; the build runs `npm ci && npm run build`, the start command is `npm start`, and Railway checks `/api/health`.
+2. In the Railway service's **Variables** settings, set `NODE_ENV` to `production`, `MONGODB_URI` to the same private MongoDB Atlas connection string currently used by Render, and `MONGODB_DATABASE` to `zyngram_campus_hub`. Do not create a new Atlas database if the existing student and campus data must be retained.
+3. Generate a strong, private `SESSION_SECRET` in Railway. Set `APP_BASE_URL` to the public HTTPS Railway domain after generating that domain. Do not reuse the Render session secret; users may need to sign in again on the new host.
+4. If the Atlas Network Access list restricts IP addresses, allow the Railway service's outbound connection as described in Railway's current networking options. Do not commit the Atlas URI or open database access more broadly than required.
+5. If the Atlas database is empty, set `BOOTSTRAP_ADMIN_EMAIL` and a unique `BOOTSTRAP_ADMIN_PASSWORD` of 12–200 characters before starting the service. These are required only to create the first production admin in an empty database. After successful initialization, remove `BOOTSTRAP_ADMIN_PASSWORD`.
+6. Configure `MAIL_HOST`, `MAIL_PORT`, `MAIL_SECURE`, `MAIL_USER`, `MAIL_PASSWORD`, `MAIL_FROM`, and `ADMIN_NOTIFICATION_EMAIL` only if email notifications and invitations should be sent.
+7. Deploy, then verify `https://YOUR-RAILWAY-DOMAIN/api/health` returns a successful response with the MongoDB connection. Sign in and check existing students, courses, assignments, and other records before changing the public link.
+8. Keep the existing Render and Netlify deployments available until Railway has been tested. When ready to switch users, share the Railway domain. If using a custom domain, add it to Railway and set `APP_BASE_URL` to that HTTPS domain. The Railway app serves its own frontend and API together, so Netlify's `/api/*` redirect is not needed for the Railway-hosted site.
+
+Using the same Atlas database means records are shared between Render and Railway during the transition. Avoid running both app versions for ongoing writes for longer than necessary, and do not point a deployment at a new or empty database unless a separate data migration is planned.
+
+### Previous deployment option (Render + Netlify)
 
 The repository includes `render.yaml` for a Render web service. To deploy:
 
