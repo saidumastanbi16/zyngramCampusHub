@@ -20,8 +20,50 @@ const emptyApi = {
 };
 const methods = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'];
 
+function OpenApiDocumentation({ specification, search, setSearch, loading, onRefresh }) {
+  const operations = Object.entries(specification?.paths || {}).flatMap(([path, pathOperations]) =>
+    Object.entries(pathOperations).map(([method, operation]) => ({ path, method, ...operation }))
+  ).filter((operation) =>
+    `${operation.path} ${operation.summary || ''} ${operation.description || ''} ${(operation.tags || []).join(' ')}`
+      .toLowerCase().includes(search.toLowerCase())
+  );
+  const serverUrl = specification?.servers?.[0]?.url || '/';
+
+  return <section className="api-documentation">
+    <div className="api-docs-header panel">
+      <div><p className="eyebrow">OPENAPI {specification?.openapi || '3.0'}</p><h2>{specification?.info?.title || 'Campus Hub API'}</h2><p>{specification?.info?.description}</p><small>Version {specification?.info?.version} · Server {serverUrl}</small></div>
+      <button className="button-secondary" onClick={onRefresh}><RefreshCw size={14} /> Refresh specification</button>
+    </div>
+    <div className="api-docs-toolbar">
+      <div className="api-search"><Search size={15} /><input aria-label="Search API documentation" placeholder="Search endpoints, modules, or descriptions" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
+      <a className="button-secondary" href="/api/admin/api-management/openapi.json" target="_blank" rel="noreferrer">View raw JSON</a>
+    </div>
+    {loading && <div className="panel empty-state">Loading API documentation…</div>}
+    {!loading && operations.length === 0 && <div className="panel empty-state">{specification ? 'No endpoints match your search.' : 'API documentation could not be loaded.'}</div>}
+    {!loading && <div className="api-doc-operation-list">{operations.map((operation) => {
+      const responses = Object.entries(operation.responses || {});
+      const security = operation.security?.length ? operation.security.flatMap((entry) => Object.keys(entry)).map((name) => specification.components?.securitySchemes?.[name]?.name || name).join(', ') : 'No authentication required';
+      const requestContent = operation.requestBody?.content?.['application/json'];
+      return <details className="panel api-doc-operation" key={`${operation.method}-${operation.path}`}>
+        <summary><span className={`api-method-badge ${operation.method}`}>{operation.method.toUpperCase()}</span><code>{operation.path}</code><span className="api-doc-summary">{operation.summary || operation.operationId}</span><span className="api-doc-chevron">⌄</span></summary>
+        <div className="api-doc-details">
+          {operation.description && <p className="api-doc-description">{operation.description}</p>}
+          <div className="api-doc-meta"><span><b>Authentication</b>{security}</span><span><b>Module</b>{(operation.tags || ['Campus Hub']).join(', ')}</span><span><b>Operation ID</b><code>{operation.operationId || 'Not specified'}</code></span></div>
+          {operation.parameters?.length > 0 && <section className="api-doc-section"><h3>Parameters</h3><div className="api-doc-parameters">{operation.parameters.map((parameter) => <div className="api-doc-parameter" key={`${parameter.in}-${parameter.name}`}><b>{parameter.name}</b><span>{parameter.in}{parameter.required ? ' · required' : ' · optional'}</span><p>{parameter.description || 'No description supplied.'}</p>{parameter.schema?.example !== undefined && <code>Example: {String(parameter.schema.example)}</code>}</div>)}</div></section>}
+          {requestContent && <section className="api-doc-section"><h3>Request body</h3>{requestContent.example !== undefined && <pre>{JSON.stringify(requestContent.example, null, 2)}</pre>}</section>}
+          <section className="api-doc-section"><h3>Responses</h3><div className="api-doc-responses">{responses.map(([status, response]) => <div className="api-doc-response" key={status}><code className={Number(status) >= 400 ? 'failure' : ''}>{status}</code><span>{response.description}</span>{response.content?.['application/json']?.example !== undefined && <pre>{JSON.stringify(response.content['application/json'].example, null, 2)}</pre>}</div>)}</div></section>
+        </div>
+      </details>;
+    })}</div>}
+    <p className="fine-print"><ShieldCheck size={14} /> Generated from the administrator’s active OpenAPI registry. The API-key gateway is a controlled demonstration and does not proxy existing session endpoints.</p>
+  </section>;
+}
+
 export default function ApiManagement() {
   const [tab, setTab] = useState('registry');
+  const [openApi, setOpenApi] = useState(null);
+  const [docsQuery, setDocsQuery] = useState('');
+  const [docsLoading, setDocsLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [selectableApis, setSelectableApis] = useState([]);
   const [consumers, setConsumers] = useState([]);
@@ -61,12 +103,22 @@ export default function ApiManagement() {
     setSelectableApis(apiPage.items);
   }, []);
   const loadAnalytics = useCallback(async () => setAnalytics(await request('/admin/api-management/analytics')), []);
+  const loadOpenApi = useCallback(async () => {
+    setDocsLoading(true);
+    setError('');
+    try { setOpenApi(await request('/admin/api-management/openapi.json')); }
+    catch (loadError) { setError(loadError.message); }
+    finally { setDocsLoading(false); }
+  }, []);
   const reload = useCallback(async () => {
     setError('');
     try { await Promise.all([loadRegistry(), loadConsumers(), loadAnalytics()]); }
     catch (loadError) { setError(loadError.message); }
   }, [loadRegistry, loadConsumers, loadAnalytics]);
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    if (tab === 'docs' && !openApi && !docsLoading) loadOpenApi();
+  }, [tab, openApi, docsLoading, loadOpenApi]);
 
   async function saveApi(event) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
@@ -173,7 +225,7 @@ export default function ApiManagement() {
       <article className="stat-card"><div className="stat-card-top"><span>Error rate</span><span className="stat-icon yellow-bg"><ShieldCheck size={17} /></span></div><strong className="stat-number">{analytics.errorRate}<small>%</small></strong><div className="stat-meta">{analytics.failedRequests} failed responses</div></article>
     </div>
     <div className="api-tabs" role="tablist" aria-label="API management sections">
-      {[['registry', 'API registry'], ['consumers', 'Consumers & access'], ['monitoring', 'Monitoring & docs']].map(([value, label]) => <button role="tab" aria-selected={tab === value} className={tab === value ? 'active' : ''} key={value} onClick={() => setTab(value)}>{label}</button>)}
+      {[['registry', 'API registry'], ['consumers', 'Consumers & access'], ['monitoring', 'Monitoring'], ['docs', 'API documentation']].map(([value, label]) => <button role="tab" aria-selected={tab === value} className={tab === value ? 'active' : ''} key={value} onClick={() => setTab(value)}>{label}</button>)}
     </div>
     {tab === 'registry' && <>
       <div className="api-toolbar"><div className="api-search"><Search size={15} /><input aria-label="Search API registry" placeholder="Search APIs, modules, or paths" value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} /></div><select aria-label="Filter by method" value={filterMethod} onChange={(event) => { setPage(1); setFilterMethod(event.target.value); }}><option value="">All methods</option>{methods.map((method) => <option key={method}>{method}</option>)}</select><select aria-label="Filter by status" value={filterStatus} onChange={(event) => { setPage(1); setFilterStatus(event.target.value); }}><option value="">All statuses</option><option value="active">Active</option><option value="archived">Archived</option></select><button className="button-primary" onClick={() => { setDraft(emptyApi); setEditingId(''); setShowApiForm((open) => !open); }}><Plus size={14} /> Register API</button></div>
@@ -207,10 +259,11 @@ export default function ApiManagement() {
     </>}
     {tab === 'monitoring' && <>
       <section className="panel api-test-console"><div className="panel-heading"><div><h2>API-key test console</h2><p>Calls the controlled demonstration gateway; this does not proxy to the Campus Hub session routes.</p></div></div><form onSubmit={runTest} className="api-test-form"><label>Registered API<select required value={testApiId} onChange={(event) => setTestApiId(event.target.value)}><option value="">Choose an API</option>{selectableApis.map((item) => <option value={item.identifier} key={item.id}>{item.name} · {item.method} {item.endpoint_path}</option>)}</select></label><label>X-API-Key<input autoComplete="off" type="password" value={testKey} onChange={(event) => setTestKey(event.target.value)} placeholder="zch_…" /></label><button className="button-primary">Send test request <Activity size={14} /></button></form>{testResult && <pre className="api-test-result">{testResult}</pre>}</section>
-      <div className="api-docs-link"><div><h2>OpenAPI specification</h2><p>Generated from active registry entries; access requires an administrator session.</p></div><a className="button-secondary" href="/api/admin/api-management/openapi.json" target="_blank" rel="noreferrer">View OpenAPI JSON</a></div>
+      <div className="api-docs-link"><div><h2>OpenAPI specification</h2><p>Browse readable endpoint documentation, or open the raw JSON for API tools.</p></div><div className="api-doc-actions"><button className="button-primary" onClick={() => setTab('docs')}><BookOpen size={14} /> Browse documentation</button><a className="button-secondary" href="/api/admin/api-management/openapi.json" target="_blank" rel="noreferrer">View raw JSON</a></div></div>
       <div className="section-title-row"><div><h2>Recent API activity</h2><p>Actual responses from registered routes and API-key gateway requests.</p></div><button className="text-link" onClick={loadAnalytics}>Refresh activity <RefreshCw size={13} /></button></div>
       <div className="api-activity-list">{analytics.recent.map((entry) => <article className="panel api-activity-row" key={entry.id}><span className={`api-outcome ${entry.outcome}`}>{entry.response_status}</span><div><b>{entry.method} {entry.endpoint}</b><small>{entry.api_identifier} · {entry.consumer_name}</small></div><span>{entry.duration_ms} ms</span><span>{new Date(entry.created_at).toLocaleString()}</span></article>)}{analytics.recent.length === 0 && <div className="panel empty-state">No matched API requests have been recorded yet.</div>}</div>
       <p className="fine-print"><ShieldCheck size={14} /> API keys are hashed at rest; protected gateway calls require active consumer permission and respect that consumer’s rolling one-minute request window.</p>
     </>}
+    {tab === 'docs' && <OpenApiDocumentation specification={openApi} search={docsQuery} setSearch={setDocsQuery} loading={docsLoading} onRefresh={loadOpenApi} />}
   </div>;
 }
