@@ -8,11 +8,13 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { client, databasePromise } from './db.js';
+import { initializeApiManagement, registerApiManagement } from './api-management.js';
 import { provisionDemoData } from './demo-data.js';
 import { invitationMailConfigured, sendInvitationEmail, sendStudentRegistrationNotification } from './mailer.js';
 
 const app = express();
 const db = await databasePromise;
+await initializeApiManagement(db);
 const port = Number(process.env.PORT || 3001);
 const production = process.env.NODE_ENV === 'production';
 const secret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -154,6 +156,7 @@ const requireRoles = (...allowed) => (req, res, next) => {
 const recordAudit = (actor, action, entity, entityId, details) => auditLog.insertOne({
   actor_id: actor, action, entity, entity_id: entityId, ...(details ? { details } : {}), created_at: new Date().toISOString()
 });
+registerApiManagement({ app, db, requireUser, requireRoles, recordAudit });
 async function createNotification(userId, type, title, message, entityId, dedupeKey) {
   try {
     await notifications.insertOne({

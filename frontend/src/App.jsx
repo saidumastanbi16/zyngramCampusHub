@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Tutorials from './Tutorials.jsx';
+import ApiManagement from './ApiManagement.jsx';
 import {
   Activity, ArrowRight, ArrowUpRight, Award, Bell, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2, Copy,
   ChevronDown, CircleHelp, Clock3, Command, Download, FileCheck2, FileText, GraduationCap,
-  LayoutDashboard, LifeBuoy, LogOut, Menu, MessageCircle, MoreHorizontal, Play, Plus, Radio, Search,
+  KeyRound, LayoutDashboard, LifeBuoy, LogOut, Menu, MessageCircle, MoreHorizontal, Play, Plus, Radio, Search,
   Send, ShieldCheck, Sparkles, Upload, Users, X
 } from 'lucide-react';
 
@@ -39,7 +40,7 @@ const NAV_BY_ROLE = {
   ]),
   admin: NAV.filter(([id]) => !['services', 'levels'].includes(id)).map(([id, label, Icon]) => [
     id, ({ courses: 'Courses & batches', attendance: 'Campus attendance', tasks: 'Task oversight', progress: 'Reports & analytics' })[id] || label, Icon
-  ]).concat([['users', 'User management', Users], ['access', 'Access & system', ShieldCheck], ['audit', 'Activity log', Activity]])
+  ]).concat([['users', 'User management', Users], ['api-management', 'API management', KeyRound], ['access', 'Access & system', ShieldCheck], ['audit', 'Activity log', Activity]])
 };
 const WORKSPACE_LABEL = {
   student: 'YOUR LEARNING',
@@ -116,6 +117,7 @@ function Heading({ eyebrow, title, description, action }) {
 function AdminOverview({ data, user, setPage }) {
   const actions = [
     ['users', 'Manage user accounts', 'Create student, trainer, and coordinator accounts.', Users],
+    ['api-management', 'Manage Campus Hub APIs', 'Register API routes, control consumers, and monitor requests.', KeyRound],
     ['progress', 'Reports & analytics', 'Review campus-wide learner and attendance indicators.', Activity],
     ['access', 'Access & system', 'Review role boundaries and security information.', ShieldCheck],
     ['audit', 'Activity log', 'Inspect recent account and campus actions.', FileCheck2]
@@ -1003,6 +1005,7 @@ export default function App() {
     case 'profile': content = <Profile user={user} />; break;
     case 'audit': content = <Audit notify={notify} />; break;
     case 'users': content = <UserManagement notify={notify} />; break;
+    case 'api-management': content = user.role === 'admin' ? <ApiManagement /> : <Overview data={data} user={user} setPage={setPage} openCourse={openCourse} />; break;
     case 'access': content = user.role === 'admin' ? <AccessAndSystem system={data.system} /> : <Overview data={data} user={user} setPage={setPage} openCourse={openCourse} />; break;
     default: content = user.role === 'admin'
       ? <AdminOverview data={data} user={user} setPage={setPage} />

@@ -60,6 +60,18 @@ To provision the requested local demo students with one-time generated credentia
 
 To give local demo students a submit-ready assignment, run `npm run assign-student-work`. It assigns a practical project from Full Stack Web Development, Digital Marketing, or Finance Fundamentals to each student without existing open work, preserves submitted work, and records the assignment in the audit log. Students submit a viewable HTTPS project link and an optional trainer note from Tasks & feedback. This script is disabled in production.
 
+### API management
+
+Administrators can open **API management** in the sidebar. The registry is stored in MongoDB and is initialized with routes found in the Express application (`/api/health`, `/api/dashboard`, `/api/courses`, `/api/tasks`, `/api/attendance`, and `/api/notifications`). These records describe real routes; adding a registry record does not create a new Campus Hub application route. API identifiers are unique, and deletion archives a record so its history is retained.
+
+The registry supports search, method/status filters, pagination, editing, timestamps, and an administrator-only OpenAPI JSON document at `/api/admin/api-management/openapi.json`. Each entry can document query/path/header parameters, JSON request/response examples, and error codes; authentication and gateway requirements appear in the generated spec. The administrator console also supports registering consumer applications, granting active API permissions, configuring per-consumer requests per minute, suspending consumers, and issuing, rotating, or revoking API keys. Keys are high-entropy random values; only their SHA-256 hashes and a short prefix are stored. The plaintext value is returned only when issued or rotated.
+
+`POST` or another registered method to `/api/managed/:identifier` is a controlled API-key demonstration gateway. It validates active credentials, permission mappings, and per-consumer rate limits, returning `401`, `403`, or `429` as appropriate. The gateway deliberately does **not** proxy to the existing Campus Hub endpoints: those continue to use their existing HTTP-only session and role-based authorization. Use the dashboard test console to exercise the API-key flow. Request activity records are written for registered real routes and gateway requests, including method, API and consumer identifiers, status, duration, and success/failure outcome. API-management changes are also added to the existing audit log.
+
+The built-in **Campus Hub web application** consumer represents first-party session-authenticated requests and cannot be changed through the consumer controls. The request body limit is the existing 32 KB Express JSON limit. The prototype gateway's rate-limit counters are process-local and reset on server restart; use a shared/distributed limiter before running multiple production instances. This module does not claim that external services or production credentials have been integrated.
+
+Run the API management checks with `node --test backend/test/api-management.test.js`; run the complete backend test suite with `npm test` and create the production frontend bundle with `npm run build`.
+
 ### Public deployment (Railway + MongoDB Atlas)
 
 The app can run as a single Railway service: Railway builds the React frontend, then starts the Express server, which serves both the frontend and `/api/*` routes on the same domain. MongoDB Atlas remains the persistent database.
