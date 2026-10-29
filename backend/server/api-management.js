@@ -35,6 +35,7 @@ const apiSchema = z.object({
 });
 const consumerSchema = z.object({
   name: z.string().trim().min(2).max(100),
+  identifier: z.string().trim().regex(/^[a-z][a-z0-9-]{2,62}$/).optional(),
   description: z.string().trim().max(500).default(''),
   rateLimit: z.number().int().min(1).max(6000).default(60)
 });
@@ -66,6 +67,7 @@ export async function initializeApiManagement(db) {
   await Promise.all([
     apis.createIndex({ identifier: 1 }, { unique: true }),
     db.collection('api_consumers').createIndex({ name: 1 }, { unique: true }),
+    db.collection('api_consumers').createIndex({ identifier: 1 }, { unique: true, partialFilterExpression: { identifier: { $type: 'string' } } }),
     db.collection('api_consumers').createIndex({ key_hash: 1 }, { unique: true, partialFilterExpression: { key_hash: { $type: 'string' } } }),
     db.collection('api_activity').createIndex({ created_at: -1 }),
     db.collection('api_activity').createIndex({ api_id: 1, created_at: -1 }),
@@ -83,6 +85,7 @@ export async function initializeApiManagement(db) {
     {
       $setOnInsert: {
         name: 'Campus Hub web application (built-in)',
+        identifier: 'campus-hub-web-app',
         description: 'First-party browser client authenticated with the existing HTTP-only campus session.',
         rateLimit: 6000,
         status: 'active',
@@ -108,7 +111,12 @@ function issueKey() {
 }
 function normalizeConsumer(consumer) {
   const { key_hash, key_prefix, ...safe } = documentId(consumer);
-  return { ...safe, keyPrefix: key_prefix || null, hasKey: Boolean(key_hash) };
+  return {
+    ...safe,
+    keyPrefix: key_prefix || null,
+    hasKey: Boolean(key_hash),
+    keyStatus: consumer.key_status || (key_hash ? 'active' : consumer.key_revoked_at ? 'revoked' : 'none')
+  };
 }
 function routePath(api) {
   return `${api.base_url.replace(/\/$/, '')}${api.endpoint_path}`;
@@ -235,14 +243,15 @@ export function registerApiManagement({ app, db, requireUser, requireRoles, reco
     const parsed = consumerSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: 'Enter a consumer name and a rate limit from 1 to 6,000 requests per minute.' });
     const now = new Date().toISOString();
+    const identifier = parsed.data.identifier || `consumer-${crypto.randomUUID().slice(0, 12)}`;
     const record = {
-      _id: `consumer-${crypto.randomUUID()}`, ...parsed.data, status: 'active',
+      _id: `consumer-${crypto.randomUUID()}`, ...parsed.data, identifier, status: 'active',
       permitted_api_ids: [], created_at: now, updated_at: now
     };
     try {
       await consumers.insertOne(record);
     } catch (error) {
-      if (error.code === 11000) return res.status(409).json({ error: 'A consumer with that name already exists.' });
+      if (error.code === 11000) return res.status(409).json({ error: 'A consumer name or identifier already exists.' });
       throw error;
     }
     await recordAudit(req.user._id, 'api_consumer.create', 'api_consumer', record._id);
@@ -262,6 +271,7 @@ export function registerApiManagement({ app, db, requireUser, requireRoles, reco
     await consumers.updateOne({ _id: consumer._id }, { $set: update });
     if (parsed.data.status === 'suspended') {
       await consumers.updateOne({ _id: consumer._id }, { $unset: { key_hash: '', key_prefix: '' } });
+      await consumers.updateOne({ _id: consumer._id }, { $set: { key_status: 'revoked', key_revoked_at: new Date().toISOString() } });
       rateBuckets.delete(String(consumer._id));
     }
     await recordAudit(req.user._id, parsed.data.status === 'suspended' ? 'api_consumer.suspend_revoke' : 'api_consumer.policy_update', 'api_consumer', consumer._id, parsed.data);
@@ -286,7 +296,7 @@ export function registerApiManagement({ app, db, requireUser, requireRoles, reco
     if (consumer.built_in) return res.status(409).json({ error: 'The first-party session consumer uses campus sessions, not API keys.' });
     if (consumer.status !== 'active') return res.status(409).json({ error: 'Activate this consumer before issuing a key.' });
     const key = issueKey();
-    await consumers.updateOne({ _id: consumer._id }, { $set: { key_hash: hashKey(key), key_prefix: key.slice(0, 12), updated_at: new Date().toISOString() } });
+    await consumers.updateOne({ _id: consumer._id }, { $set: { key_hash: hashKey(key), key_prefix: key.slice(0, 12), key_status: 'active', key_revoked_at: null, updated_at: new Date().toISOString() } });
     rateBuckets.delete(String(consumer._id));
     await recordAudit(req.user._id, 'api_consumer.key_issue_or_rotate', 'api_consumer', consumer._id);
     res.status(201).json({ key, message: 'Copy this key now. It cannot be retrieved again.' });
@@ -296,7 +306,7 @@ export function registerApiManagement({ app, db, requireUser, requireRoles, reco
     if (!consumer) return res.status(404).json({ error: 'Consumer not found.' });
     if (consumer.built_in) return res.status(409).json({ error: 'The first-party session consumer does not have an API key to revoke.' });
     await consumers.updateOne({ _id: consumer._id }, {
-      $set: { updated_at: new Date().toISOString() },
+      $set: { key_status: 'revoked', key_revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() },
       $unset: { key_hash: '', key_prefix: '' }
     });
     rateBuckets.delete(String(consumer._id));
@@ -305,14 +315,25 @@ export function registerApiManagement({ app, db, requireUser, requireRoles, reco
   });
 
   app.get('/api/admin/api-management/analytics', requireUser, requireRoles('admin'), async (_req, res) => {
-    const [total, failures, recent] = await Promise.all([
+    const [total, failures, successes, activeApis, archivedApis, recent] = await Promise.all([
       activity.countDocuments({}),
       activity.countDocuments({ outcome: 'failure' }),
+      activity.countDocuments({ outcome: 'success' }),
+      apis.countDocuments({ status: 'active' }),
+      apis.countDocuments({ status: 'archived' }),
       activity.find({}).sort({ created_at: -1 }).limit(50).toArray()
     ]);
+    const durationRows = await activity.find({ duration_ms: { $type: 'number' } }, { projection: { duration_ms: 1 } }).toArray();
+    const averageResponseTime = durationRows.length
+      ? Math.round(durationRows.reduce((sum, row) => sum + row.duration_ms, 0) / durationRows.length)
+      : 0;
     res.json({
       totalRequests: total,
       failedRequests: failures,
+      successfulRequests: successes,
+      activeApis,
+      archivedApis,
+      averageResponseTime,
       errorRate: total ? Math.round((failures / total) * 10000) / 100 : 0,
       recent: recent.map(documentId)
     });

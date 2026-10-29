@@ -1026,12 +1026,30 @@ kbd { color: #9aa8b8; border-color: #39485b; background: #202c3a; }
 .api-outcome.failure { color: #ffb0a1; background: #452a2b; }
 .api-management .success-message { align-items: center; }
 .api-management .fine-print { margin-top: 12px; }
+.api-overview-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.api-overview-panel { padding: 18px; }
+.api-overview-panel h2 { margin: 4px 0 15px; font-size: 15px; }
+.api-overview-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.api-overview-metrics div { display: grid; gap: 5px; padding: 12px; border-radius: 7px; background: #192431; }
+.api-overview-metrics strong { color: #eef4fb; font-size: 21px; }
+.api-overview-metrics strong small { color: #9aa8b8; font-size: 10px; }
+.api-overview-metrics span { color: #9aa8b8; font-size: 9px; }
+.api-overview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.api-details { padding: 18px; margin-bottom: 14px; }
+.api-details>code { display: block; margin-top: 10px; color: #9dcaff; font: 11px var(--mono); }
+.api-details dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 14px 0 0; }
+.api-details dl div { padding: 10px; border-radius: 7px; background: #192431; }
+.api-details dt { color: #8998a9; font-size: 8px; }
+.api-details dd { margin: 5px 0 0; color: #dce6f2; font-size: 10px; }
+.api-doc-group-title { grid-column: 1 / -1; margin: 16px 0 4px; color: #dce6f2; font-size: 12px; }
 @media (max-width: 760px) {
   .api-toolbar { flex-wrap: wrap; }
   .api-search { flex-basis: 100%; }
   .api-card, .api-consumer-top { flex-direction: column; }
   .api-card-actions, .api-consumer-controls { justify-content: start; }
   .api-test-form { grid-template-columns: 1fr; }
+  .api-overview-grid { grid-template-columns: 1fr; }
+  .api-details dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .api-activity-row { grid-template-columns: 42px minmax(0, 1fr) auto; }
   .api-activity-row>span:last-child { grid-column: 2 / -1; }
 }
