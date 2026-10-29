@@ -5,3 +5,6 @@ data/
 backend/data/
 backend/database/
 *.log
+
+# Local Netlify folder
+.netlify
