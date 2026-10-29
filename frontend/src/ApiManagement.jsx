@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Activity, Archive, BookOpen, Check, Copy, KeyRound, Plus, RefreshCw, Search, ShieldCheck, Users } from 'lucide-react';
+import { apiUrl } from './api-base.js';
 
 async function request(path, options = {}) {
-  const response = await fetch(`/api${path}`, {
-    credentials: 'same-origin',
+  const response = await fetch(apiUrl(path), {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options
   });
@@ -212,7 +213,7 @@ export default function ApiManagement() {
     const selected = items.find((item) => item.identifier === testApiId);
     if (!selected) { setError('Choose an active API to test.'); return; }
     try {
-      const response = await fetch(`/api/managed/${encodeURIComponent(selected.identifier)}`, {
+      const response = await fetch(apiUrl(`/managed/${encodeURIComponent(selected.identifier)}`), {
         method: selected.method,
         headers: testKey ? { 'X-API-Key': testKey } : {}
       });

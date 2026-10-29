@@ -57,6 +57,20 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '32kb' }));
 app.use(cookieParser());
 app.use((_req, res, next) => {
+  const allowedOrigins = new Set([
+    'http://localhost:5173',
+    'https://zyngramcampushub.netlify.app',
+    'https://saidumastanbi16.github.io'
+  ]);
+  const origin = _req.headers.origin;
+  if (origin && (allowedOrigins.has(origin) || origin.startsWith('https://saidumastanbi16.github.io/'))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,PUT,DELETE,OPTIONS');
+  if (_req.method === 'OPTIONS') return res.sendStatus(204);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'same-origin');
@@ -264,7 +278,7 @@ async function issueCourseCertificate(learnerId, courseId) {
 async function issueSession(user, res) {
   const token = jwt.sign({ sub: user._id, sv: user.session_version ?? 0 }, secret, { expiresIn: '8h', issuer: 'zyngram-campus-hub' });
   res.cookie('campus_session', token, {
-    httpOnly: true, secure: production, sameSite: 'strict', maxAge: 8 * 60 * 60 * 1000, path: '/'
+    httpOnly: true, secure: production, sameSite: production ? 'none' : 'strict', maxAge: 8 * 60 * 60 * 1000, path: '/'
   });
 }
 
@@ -402,12 +416,12 @@ app.post('/api/auth/accept-invite', async (req, res) => {
   });
   if (!result.modifiedCount) return res.status(400).json({ error: 'This invitation is invalid, expired, or already used. Ask your administrator for a new link.' });
   await recordAudit(pendingUser._id, 'user.accept_invitation', 'user', pendingUser._id);
-  res.clearCookie('campus_session', { httpOnly: true, secure: production, sameSite: 'strict', path: '/' });
+  res.clearCookie('campus_session', { httpOnly: true, secure: production, sameSite: production ? 'none' : 'strict', path: '/' });
   res.json({ ok: true });
 });
 app.post('/api/auth/logout', requireUser, async (req, res) => {
   await recordAudit(req.user._id, 'sign_out', 'session', req.user._id);
-  res.clearCookie('campus_session', { httpOnly: true, secure: production, sameSite: 'strict', path: '/' });
+  res.clearCookie('campus_session', { httpOnly: true, secure: production, sameSite: production ? 'none' : 'strict', path: '/' });
   res.json({ ok: true });
 });
 app.get('/api/auth/session', async (req, res) => res.json({ user: await currentUser(req) }));

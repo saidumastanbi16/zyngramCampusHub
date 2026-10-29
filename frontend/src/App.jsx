@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Tutorials from './Tutorials.jsx';
 import ApiManagement from './ApiManagement.jsx';
+import { apiUrl } from './api-base.js';
 import {
   Activity, ArrowRight, ArrowUpRight, Award, Bell, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2, Copy,
   ChevronDown, CircleHelp, Clock3, Command, Download, FileCheck2, FileText, GraduationCap,
@@ -49,13 +50,13 @@ const WORKSPACE_LABEL = {
   admin: 'ADMINISTRATION'
 };
 async function api(path, options = {}) {
-  const response = await fetch(`/api${path}`, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...options.headers }, ...options });
+  const response = await fetch(apiUrl(path), { credentials: 'include', headers: { 'Content-Type': 'application/json', ...options.headers }, ...options });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'Something went wrong. Please try again.');
   return result;
 }
 async function uploadApi(path, body) {
-  const response = await fetch(`/api${path}`, { method: 'POST', credentials: 'same-origin', body });
+  const response = await fetch(apiUrl(path), { method: 'POST', credentials: 'include', body });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'Something went wrong. Please try again.');
   return result;
