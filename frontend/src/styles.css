@@ -170,6 +170,21 @@ kbd { display: flex; align-items: center; gap: 2px; padding: 2px 4px; border: 1p
 .dashboard-quick-actions button { justify-content: center; }
 .notification-summary { display: flex; align-items: center; justify-content: center; gap: 7px; color: #ffd1a6 !important; border: 0; background: transparent !important; font-size: 9px; cursor: pointer; }
 .dashboard-empty { display: flex; align-items: center; gap: 9px; min-height: 74px; color: #8fa0b4; font-size: 9px; }
+.continue-learning-card, .deadline-card, .skill-progress-card, .recent-activity-card { grid-column: span 6; }
+.continue-learning-card > p { color: #aab7c6; font-size: 10px; }
+.continue-learning-card .progress-track { margin: 14px 0; }
+.deadline-row, .recent-activity-row { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 0; color: #dfe7f2; border: 0; border-top: 1px solid #303d4d; background: transparent; text-align: left; cursor: pointer; }
+.deadline-date { display: grid; width: 38px; height: 38px; place-items: center; color: #ffd1a6; border-radius: 6px; background: #3a3d43; }
+.deadline-date b { font-size: 13px; line-height: 1; }
+.deadline-date small { font-size: 7px; }
+.deadline-row > span:nth-child(2), .recent-activity-row > span:nth-child(2) { display: grid; min-width: 0; }
+.deadline-row span span, .recent-activity-row b { font-size: 11px; }
+.deadline-row small, .recent-activity-row small { overflow: hidden; margin-top: 3px; color: #8fa0b4; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-skill-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid #303d4d; }
+.dashboard-skill-row > span { display: grid; }
+.dashboard-skill-row b { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-skill-row small { margin-top: 3px; color: #8fa0b4; font-size: 8px; }
+.activity-dot { width: 8px; height: 8px; border-radius: 50%; background: #d6a064; box-shadow: 0 0 0 4px #4a4036; }
 
 @media (max-width: 900px) {
   .today-schedule, .pending-work-card, .readiness-card, .recommended-card, .learning-streak-card, .dashboard-quick-actions { grid-column: span 6; }
