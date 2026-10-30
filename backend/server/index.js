@@ -45,6 +45,7 @@ const internshipApplications = db.collection('internship_applications');
 const learningWeeks = db.collection('learning_weeks');
 const studentProgress = db.collection('student_progress');
 const notifications = db.collection('notifications');
+const profileChangeRequests = db.collection('profile_change_requests');
 const resumeFiles = db.collection('resume_files');
 const studentResumeFiles = db.collection('student_resume_files');
 const appSettings = db.collection('app_settings');
@@ -1476,6 +1477,62 @@ app.post('/api/announcements', requireUser, requireRoles('trainer', 'coordinator
   res.status(201).json(toApiDocument(notice));
 });
 app.get('/api/profile', requireUser, async (req, res) => res.json({ user: req.user, courses: await courses.countDocuments() }));
+app.post('/api/profile-change-requests', requireUser, async (req, res) => {
+  const parsed = z.object({
+    name: z.string().trim().min(2).max(100),
+    cohort: z.string().trim().min(2).max(100)
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a valid name and cohort.' });
+  const pending = await profileChangeRequests.findOne({ user_id: req.user._id, status: 'pending' });
+  if (pending) return res.status(409).json({ error: 'A profile change request is already waiting for administrator approval.' });
+  const request = {
+    _id: `profile-change-${crypto.randomUUID()}`,
+    user_id: req.user._id,
+    user_name: req.user.name,
+    user_role: req.user.role,
+    current: { name: req.user.name, cohort: req.user.cohort },
+    requested: parsed.data,
+    status: 'pending',
+    created_at: new Date().toISOString()
+  };
+  await profileChangeRequests.insertOne(request);
+  const admins = await users.find({ role: 'admin' }, { projection: { _id: 1 } }).toArray();
+  await Promise.all(admins.map((admin) => createNotification(
+    admin._id,
+    'profile_change_request',
+    'Profile change request',
+    `${req.user.name} requested profile changes.`,
+    request._id,
+    `profile-change-request:${request._id}`
+  )));
+  await recordAudit(req.user._id, 'profile_change.request', 'profile_change_request', request._id);
+  res.status(201).json(toApiDocument(request));
+});
+app.get('/api/profile-change-requests', requireUser, requireRoles('admin'), async (_req, res) => {
+  const rows = await profileChangeRequests.find().sort({ created_at: -1 }).limit(100).toArray();
+  res.json(rows.map(toApiDocument));
+});
+app.patch('/api/profile-change-requests/:id', requireUser, requireRoles('admin'), async (req, res) => {
+  const parsed = z.object({ status: z.enum(['approved', 'rejected']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose approve or reject.' });
+  const request = await profileChangeRequests.findOne({ _id: req.params.id, status: 'pending' });
+  if (!request) return res.status(404).json({ error: 'Pending profile change request not found.' });
+  const now = new Date().toISOString();
+  const claimed = await profileChangeRequests.updateOne(
+    { _id: request._id, status: 'pending' },
+    { $set: { status: parsed.data.status, reviewed_by: req.user._id, reviewed_at: now } }
+  );
+  if (!claimed.modifiedCount) return res.status(409).json({ error: 'This profile change request has already been reviewed.' });
+  if (parsed.data.status === 'approved') {
+    await users.updateOne(
+      { _id: request.user_id },
+      { $set: { name: request.requested.name, cohort: request.requested.cohort, avatar: request.requested.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() } }
+    );
+  }
+  await createNotification(request.user_id, 'profile_change_request', 'Profile change request reviewed', `Your profile change request was ${parsed.data.status}.`, request._id);
+  await recordAudit(req.user._id, `profile_change.${parsed.data.status}`, 'profile_change_request', request._id);
+  res.json({ id: request._id, status: parsed.data.status });
+});
 app.post('/api/admin/demo-data', requireUser, requireRoles('admin'), async (req, res) => {
   const result = await provisionDemoData(db, req.user._id);
   if (!result.alreadyPresent) await recordAudit(req.user._id, 'demo.dataset.import', 'demo_dataset', 'campus-demo-v1');

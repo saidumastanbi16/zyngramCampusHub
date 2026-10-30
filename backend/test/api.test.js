@@ -509,6 +509,24 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
     body: { role: 'admin', email: 'campushub@zyngram.com', password }
   });
   assert.equal(adminLogin.status, 200);
+  const profileChange = await request('/profile-change-requests', {
+    method: 'POST',
+    cookie: studentCookie,
+    body: { name: 'Mounika Updated', cohort: 'Cohort 08 Updated' }
+  });
+  assert.equal(profileChange.status, 201);
+  const adminNotifications = await request('/notifications', { cookie: adminLogin.cookie });
+  assert.equal(adminNotifications.body.some((item) => item.type === 'profile_change_request' && item.entity_id === profileChange.body.id), true);
+  const profileRequests = await request('/profile-change-requests', { cookie: adminLogin.cookie });
+  const profileRequest = profileRequests.body.find((item) => item.id === profileChange.body.id);
+  assert.equal(profileRequest.status, 'pending');
+  const approvedProfileChange = await request(`/profile-change-requests/${profileChange.body.id}`, {
+    method: 'PATCH',
+    cookie: adminLogin.cookie,
+    body: { status: 'approved' }
+  });
+  assert.equal(approvedProfileChange.status, 200);
+  assert.equal(approvedProfileChange.body.status, 'approved');
   const registration = await request('/student-registration-requests', { method: 'POST', body: {
     name: 'New Campus Learner', password: 'new-campus-password-2026', cohort: 'Cohort 10'
   } });

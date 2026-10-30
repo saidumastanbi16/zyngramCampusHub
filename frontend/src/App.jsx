@@ -774,8 +774,26 @@ function Support({ user, notify }) {
   }
   return <div className="page-content"><Heading eyebrow="A REAL PERSON, WHEN YOU NEED ONE" title={isAdmin ? 'Campus support requests.' : 'We’re here with you.'} description={isAdmin ? 'Review learner requests and keep their status up to date.' : 'Questions about a class, a schedule, or finding your feet? It’s okay to ask.'} /><div className="support-grid"><section className="panel support-form-panel"><span className="support-spark">✳</span><p className="eyebrow">SEND A NOTE</p><h2>What can we help with?</h2><p className="muted">Your request is saved for the campus team to review.</p><form onSubmit={submit}><label htmlFor="support-topic">What’s this about?</label><select required id="support-topic" value={form.topic} onChange={(e) => setForm({ ...form, topic: e.target.value })}><option value="">Choose a topic</option><option>Learning & coursework</option><option>Schedule & attendance</option><option>Account access</option><option>Campus services</option><option>Something else</option></select><label htmlFor="support-message">Tell us a little more</label><textarea required id="support-message" minLength={10} maxLength={2000} rows={5} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} placeholder="You don’t have to have it all figured out." />{error && <p className="error-message" role="alert">{error}</p>}<button className="button-dark" disabled={busy}>{busy ? 'Sending…' : 'Send to campus support'} <Send size={15} /></button></form></section><aside className="support-side"><section className="panel faq-panel"><p className="eyebrow">{isAdmin ? 'MANAGEMENT NOTE' : 'YOUR SUPPORT HISTORY'}</p><h3>{isAdmin ? 'Campus support queue' : 'Your requests'}</h3>{tickets.length === 0 && <p className="muted">No support requests yet.</p>}{tickets.map((ticket) => <article className="support-ticket" key={ticket.id}><div><Badge tone={ticket.status === 'resolved' ? 'positive' : 'review'}>{ticket.status.replace('_', ' ')}</Badge><h3>{ticket.topic}</h3>{isAdmin && <small>{ticket.requester_name} · {ticket.requester_role}</small>}<p>{ticket.message}</p><small>{new Date(ticket.created_at).toLocaleString()}</small></div>{isAdmin && <select aria-label={`Update status for ${ticket.id}`} value={ticket.status} onChange={(e) => updateStatus(ticket, e.target.value)}><option value="open">Open</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option></select>}</article>)}</section><div className="support-urgent"><ShieldCheck size={16} /><span>For urgent personal support, connect with your trusted local support network.</span></div></aside></div></div>;
 }
-function Profile({ user }) {
-  return <div className="page-content"><Heading eyebrow="A LITTLE ABOUT YOU" title="Your profile." description="The details that help your campus show up for you." /><div className="profile-layout"><section className="panel profile-card"><div className="profile-card-top"><Avatar initials={user.avatar} large /><Badge tone="positive"><CheckCircle2 size={13} /> ACTIVE</Badge><button className="button-secondary" disabled><Users size={15} /> Edit profile</button></div><h2>{user.name}</h2><p>{ROLE[user.role]} · {user.cohort}</p><div className="profile-divider" /><div className="profile-details"><div><span>EMAIL ADDRESS</span><b>{user.email}</b></div><div><span>CAMPUS</span><b>Hyderabad campus</b></div><div><span>COHORT</span><b>Cohort 08</b></div><div><span>LEARNING TRACK</span><b>Career pathways</b></div></div></section><section className="panel privacy-card"><ShieldCheck size={20} /><p className="eyebrow">YOUR INFORMATION, YOURS</p><h3>Learning is personal.<br />Your data should be, too.</h3><p>Only you and authorised campus staff can view your student record. Production sign-in uses a short-lived, HTTP-only session cookie.</p><span className="text-link">Read privacy approach <ArrowRight size={14} /></span></section></div></div>;
+function Profile({ user, notify }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({ name: user.name, cohort: user.cohort });
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await api('/profile-change-requests', { method: 'POST', body: JSON.stringify(form) });
+      setOpen(false);
+      notify('Profile changes sent to the administrator.');
+    } catch (submitError) {
+      setError(submitError.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <div className="page-content"><Heading eyebrow="A LITTLE ABOUT YOU" title="Your profile." description="The details that help your campus show up for you." /><div className="profile-layout"><section className="panel profile-card"><div className="profile-card-top"><Avatar initials={user.avatar} large /><Badge tone="positive"><CheckCircle2 size={13} /> ACTIVE</Badge><button className="button-secondary" onClick={() => setOpen(true)}><Users size={15} /> Edit profile</button></div><h2>{user.name}</h2><p>{ROLE[user.role]} · {user.cohort}</p><div className="profile-divider" /><div className="profile-details"><div><span>EMAIL ADDRESS</span><b>{user.email}</b></div><div><span>CAMPUS</span><b>Hyderabad campus</b></div><div><span>COHORT</span><b>{user.cohort}</b></div><div><span>LEARNING TRACK</span><b>Career pathways</b></div></div></section><section className="panel privacy-card"><ShieldCheck size={20} /><p className="eyebrow">YOUR INFORMATION, YOURS</p><h3>Learning is personal.<br />Your data should be, too.</h3><p>Only you and authorised campus staff can view your student record. Production sign-in uses a short-lived, HTTP-only session cookie.</p><span className="text-link">Read privacy approach <ArrowRight size={14} /></span></section></div>{open && <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="profile-edit-title"><div className="modal-top"><span className="modal-icon"><Users size={19} /></span><button className="icon-button" aria-label="Close" onClick={() => setOpen(false)}><X size={19} /></button></div><p className="eyebrow">PROFILE REQUEST</p><h2 id="profile-edit-title">Request a profile update.</h2><p className="muted">Changes are sent to the administrator and take effect only after approval.</p><form onSubmit={submit}><label htmlFor="profile-name">Full name</label><input id="profile-name" required minLength={2} maxLength={100} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /><label htmlFor="profile-cohort">Cohort</label><input id="profile-cohort" required minLength={2} maxLength={100} value={form.cohort} onChange={(event) => setForm({ ...form, cohort: event.target.value })} />{error && <p className="error-message" role="alert">{error}</p>}<div className="modal-actions"><button className="button-secondary" type="button" onClick={() => setOpen(false)}>Cancel</button><button className="button-dark" disabled={busy}>{busy ? 'Sending…' : 'Send for approval'} <ArrowRight size={15} /></button></div></form></section></div>}</div>;
 }
 function Audit({ notify }) {
   const [rows, setRows] = useState([]);
@@ -785,6 +803,7 @@ function Audit({ notify }) {
 function UserManagement({ notify }) {
   const [users, setUsers] = useState([]);
   const [registrationRequests, setRegistrationRequests] = useState([]);
+  const [profileChangeRequests, setProfileChangeRequests] = useState([]);
   const [open, setOpen] = useState(false);
   const [importingDemo, setImportingDemo] = useState(false);
   const [error, setError] = useState('');
@@ -792,9 +811,10 @@ function UserManagement({ notify }) {
   const [invitingId, setInvitingId] = useState('');
   const [form, setForm] = useState({ name: '', email: '', role: 'student', cohort: 'Cohort 08' });
   const load = useCallback(async () => {
-    const [people, requests] = await Promise.all([api('/users'), api('/student-registration-requests')]);
+    const [people, requests, profileRequests] = await Promise.all([api('/users'), api('/student-registration-requests'), api('/profile-change-requests')]);
     setUsers(people);
     setRegistrationRequests(requests);
+    setProfileChangeRequests(profileRequests);
   }, []);
   useEffect(() => { load().catch((e) => notify(e.message)); }, [load, notify]);
   async function create(e) {
@@ -841,6 +861,13 @@ function UserManagement({ notify }) {
         : `Registration request from ${request.name} was declined.`);
     } catch (e) { notify(e.message); }
   }
+  async function reviewProfileChange(request, status) {
+    try {
+      await api(`/profile-change-requests/${request.id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await load();
+      notify(status === 'approved' ? 'Profile change approved and applied.' : 'Profile change request rejected.');
+    } catch (e) { notify(e.message); }
+  }
   async function importDemoData() {
     if (!window.confirm('Add fictional demo student/trainer profiles, courses, assignments, and announcements? Existing accounts and records will not be overwritten. New demo accounts will have no password and cannot sign in until credentials are set.')) return;
     setImportingDemo(true);
@@ -854,6 +881,8 @@ function UserManagement({ notify }) {
   }
   return <div className="page-content"><Heading eyebrow="CAMPUS OPERATIONS" title="People on campus." description="Review student access requests, manage campus accounts, and send secure credential setup invitations." action={<><button className="button-secondary" disabled={importingDemo} onClick={importDemoData}>{importingDemo ? 'Adding demo data…' : 'Add demo data'}</button><button className="button-primary" onClick={() => setOpen(true)}><Plus size={15} /> Add account</button></>} />
     {invitation && <section className="success-message invitation-link" role="status"><span>{invitation.emailDeliveryFailed ? `Email delivery failed. Share this one-time setup link privately with ${invitation.email}:` : invitation.manual ? `Email is not configured. Share this one-time setup link privately with ${invitation.email}:` : `Development-only setup link for ${invitation.email}:`}</span><a href={invitation.url}>{invitation.url}</a><button className="button-secondary" onClick={() => navigator.clipboard.writeText(invitation.url).then(() => notify('Invitation link copied.')).catch(() => notify('Copy failed. Select and copy the link manually.'))}>Copy link</button>{invitation.manual && <small>This link expires in 48 hours and can only be used once. Do not post it publicly.</small>}</section>}
+    <div className="section-title-row"><div><h2>Profile change requests</h2><p>Approve or reject edits requested from user profile pages.</p></div><Badge tone={profileChangeRequests.filter((request) => request.status === 'pending').length ? 'review' : 'subtle'}>{profileChangeRequests.filter((request) => request.status === 'pending').length} pending</Badge></div>
+    <div className="panel user-management">{profileChangeRequests.length === 0 ? <div className="empty-state">No profile change requests yet.</div> : profileChangeRequests.map((request) => <div className="user-table-row" key={request.id}><span className="managed-user"><span><b>{request.user_name}</b><small>{request.user_role}</small></span></span><span>{request.current.name} → <b>{request.requested.name}</b><small>{request.current.cohort} → {request.requested.cohort}</small></span><span>{new Date(request.created_at).toLocaleString()}</span><span>{request.status === 'pending' ? <div className="registration-actions"><button className="text-link" onClick={() => reviewProfileChange(request, 'approved')}>Approve</button><button className="text-link" onClick={() => reviewProfileChange(request, 'rejected')}>Reject</button></div> : <Badge tone={request.status === 'approved' ? 'positive' : 'subtle'}>{request.status}</Badge>}</span></div>)}</div>
     <div className="section-title-row"><div><h2>Student registration requests</h2><p>Review new student applications. Students can sign in with their ZIN ID after approval.</p></div><Badge tone={registrationRequests.filter((request) => request.status === 'pending').length ? 'review' : 'subtle'}>{registrationRequests.filter((request) => request.status === 'pending').length} pending</Badge></div>
     <div className="panel user-management"><div className="user-table-row user-table-head"><span>APPLICANT</span><span>ZIN ID</span><span>COHORT</span><span>REVIEW</span></div>{registrationRequests.map((request) => <div className="user-table-row" key={request.id}><span className="managed-user"><Avatar initials={request.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()} /><span><b>{request.name}</b><small>{request.email}</small></span></span><span>{request.zin_id || '—'}</span><span>{request.cohort}</span><span>{request.status === 'pending' ? <div className="registration-actions"><button className="text-link" onClick={() => reviewRegistration(request, 'approved')}>Approve</button><button className="text-link" onClick={() => reviewRegistration(request, 'rejected')}>Decline</button></div> : <Badge tone={request.status === 'approved' ? 'positive' : 'subtle'}>{request.status}</Badge>}</span></div>)}{registrationRequests.length === 0 && <div className="empty-state">No student registration requests yet.</div>}</div>
     <div className="panel user-management"><div className="user-table-row user-table-head"><span>PERSON</span><span>ROLE</span><span>COHORT</span><span>ACCOUNT</span></div>{users.map((user) => <div className="user-table-row" key={user.id}><span className="managed-user"><Avatar initials={user.avatar} /><span><b>{user.name}</b><small>{user.email}</small></span></span><span><Badge tone="subtle">{ROLE[user.role]}</Badge></span><span>{user.cohort}</span><span><Badge tone={user.account_status === 'active' ? 'positive' : 'review'}>{user.account_status}</Badge>{user.account_status !== 'active' && <button className="text-link invite-button" disabled={invitingId === user.id} onClick={() => invite(user)}>{invitingId === user.id ? 'Sending…' : 'Send invitation'} <ArrowRight size={13} /></button>}</span></div>)}</div>
@@ -1003,7 +1032,7 @@ export default function App() {
     case 'announcements': content = <Announcements initial={data.announcements} user={user} notify={notify} courses={data.courses} />; break;
     case 'services': content = <Services />; break;
     case 'support': content = <Support user={user} notify={notify} />; break;
-    case 'profile': content = <Profile user={user} />; break;
+    case 'profile': content = <Profile user={user} notify={notify} />; break;
     case 'audit': content = <Audit notify={notify} />; break;
     case 'users': content = <UserManagement notify={notify} />; break;
     case 'api-management': content = user.role === 'admin' ? <ApiManagement /> : <Overview data={data} user={user} setPage={setPage} openCourse={openCourse} />; break;

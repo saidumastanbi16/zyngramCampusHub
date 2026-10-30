@@ -63,6 +63,8 @@ export const databasePromise = client.connect().then(async () => {
     database.collection('student_progress').createIndex({ learner_id: 1, course_id: 1 }, { unique: true }),
     database.collection('notifications').createIndex({ user_id: 1, created_at: -1 }),
     database.collection('notifications').createIndex({ user_id: 1, dedupe_key: 1 }, { unique: true, partialFilterExpression: { dedupe_key: { $type: 'string' } } }),
+    database.collection('profile_change_requests').createIndex({ user_id: 1, status: 1 }),
+    database.collection('profile_change_requests').createIndex({ status: 1, created_at: -1 }),
     database.collection('internship_applications').createIndex({ internship_id: 1, learner_id: 1 }, { unique: true }),
     database.collection('resume_files').createIndex({ application_id: 1 }, { unique: true }),
     database.collection('student_resume_files').createIndex({ learner_id: 1 }, { unique: true }),
