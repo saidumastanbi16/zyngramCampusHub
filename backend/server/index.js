@@ -466,6 +466,21 @@ app.get('/api/dashboard', requireUser, async (req, res) => {
     : user.role === 'trainer' ? { course_id: { $in: courseIds } } : {};
   const attended = await attendance.find(attendanceFilter).toArray();
   const taskList = await listTasks(user);
+  const learningActivity = user.role === 'student'
+    ? await lessonProgress.find({ learner_id: user._id, completed_at: { $exists: true } }, { projection: { completed_at: 1 } }).toArray()
+    : [];
+  const streakDates = [...new Set(learningActivity.map((activity) => {
+    const completedAt = new Date(activity.completed_at);
+    return Number.isNaN(completedAt.getTime()) ? '' : completedAt.toISOString().slice(0, 10);
+  }).filter(Boolean))];
+  const todayKey = new Date().toISOString().slice(0, 10);
+  let learningStreak = 0;
+  const cursor = new Date(`${todayKey}T00:00:00.000Z`);
+  if (!streakDates.includes(todayKey)) cursor.setUTCDate(cursor.getUTCDate() - 1);
+  while (streakDates.includes(cursor.toISOString().slice(0, 10))) {
+    learningStreak += 1;
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
   const notices = await announcements.find({}).sort({ published_at: -1 }).limit(3).toArray();
   const learnerCount = await users.countDocuments({ role: 'student' });
   const visibleLearnerCount = user.role === 'trainer'
@@ -503,6 +518,7 @@ app.get('/api/dashboard', requireUser, async (req, res) => {
     attendance: attended.length ? Math.round((attended.filter((record) => record.status === 'present').length / attended.length) * 100) : 0,
     tasks: taskList,
     announcements: notices.map(toApiDocument),
+    learningStreak,
     stats: {
       courses: courseList.length,
       pendingTasks: taskList.filter((task) => task.status !== 'complete').length,
