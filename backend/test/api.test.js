@@ -735,7 +735,7 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal(demoImport.status, 200);
   assert.deepEqual(
     { courses: demoImport.body.courses, tasks: demoImport.body.tasks, announcements: demoImport.body.announcements },
-    { courses: 3, tasks: 16, announcements: 2 }
+    { courses: 0, tasks: 16, announcements: 2 }
   );
   const demoUsers = await request('/users', { cookie: adminLogin.cookie });
   const mastan = demoUsers.body.find((person) => person.email === 'mastan.demo@example.test');

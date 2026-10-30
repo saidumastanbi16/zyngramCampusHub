@@ -17,9 +17,9 @@ const demoCourses = [
 ];
 
 const demoAssignments = [
-  { courseId: 'demo-course-full-stack', title: 'Build a responsive course landing page', description: 'Create a responsive learning portal landing page with at least three course modules and a working enquiry form.' },
-  { courseId: 'demo-course-digital-marketing', title: 'Create a digital marketing campaign plan', description: 'Prepare a one-week campaign plan with a target audience, message, channels, sample post, and a measure of success.' },
-  { courseId: 'demo-course-finance', title: 'Prepare a monthly budget summary', description: 'Create a sample monthly budget with income, expenses, savings, and a short cash-flow explanation.' }
+  { courseTitle: 'Full Stack Web Development', title: 'Build a responsive course landing page', description: 'Create a responsive learning portal landing page with at least three course modules and a working enquiry form.' },
+  { courseTitle: 'Digital Marketing', title: 'Create a digital marketing campaign plan', description: 'Prepare a one-week campaign plan with a target audience, message, channels, sample post, and a measure of success.' },
+  { courseTitle: 'Finance Fundamentals', title: 'Prepare a monthly budget summary', description: 'Create a sample monthly budget with income, expenses, savings, and a short cash-flow explanation.' }
 ];
 
 const demoAnnouncements = [
@@ -80,7 +80,7 @@ export async function provisionDemoData(database, actorId) {
     const { trainerEmail, ...fields } = course;
     const document = { ...fields, trainer_id: trainer._id, demo: true };
     const result = await courses.updateOne(
-      { _id: document._id },
+      { title: document.title },
       { $setOnInsert: document },
       { upsert: true }
     );
@@ -92,8 +92,9 @@ export async function provisionDemoData(database, actorId) {
     }
   }
 
-  const courseIds = new Set(await courses.distinct('_id', { _id: { $in: demoCourses.map(({ _id }) => _id) } }));
-  if (courseIds.size !== demoCourses.length) throw new Error('A demo course could not be prepared; no student tasks were added.');
+  const preparedCourses = await courses.find({ title: { $in: demoCourses.map((course) => course.title) } }).toArray();
+  const courseIdByTitle = new Map(preparedCourses.map((course) => [course.title, course._id]));
+  if (courseIdByTitle.size !== demoCourses.length) throw new Error('A demo course could not be prepared; no student tasks were added.');
   const studentRecords = demoUsers.filter((person) => person.role === 'student').map((person) => usersByEmail.get(person.email));
   const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const taskOperations = [];
@@ -102,7 +103,7 @@ export async function provisionDemoData(database, actorId) {
     const task = {
       _id: `demo-task-${learner._id}`,
       learner_id: learner._id,
-      course_id: assignment.courseId,
+      course_id: courseIdByTitle.get(assignment.courseTitle),
       title: assignment.title,
       description: assignment.description,
       due_date: dueDate,
@@ -114,7 +115,12 @@ export async function provisionDemoData(database, actorId) {
       updated_at: new Date().toISOString(),
       demo: true
     };
-    const result = await tasks.updateOne({ _id: task._id }, { $setOnInsert: task }, { upsert: true });
+    const { course_id, ...taskWithoutCourseId } = task;
+    const result = await tasks.updateOne(
+      { _id: task._id },
+      { $set: { course_id: task.course_id }, $setOnInsert: taskWithoutCourseId },
+      { upsert: true }
+    );
     if (result.upsertedCount) {
       taskOperations.push({
         actor_id: actorId, action: 'demo.task.assign', entity: 'task', entity_id: task._id,

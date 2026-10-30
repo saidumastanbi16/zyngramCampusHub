@@ -148,6 +148,15 @@ function toApiDocument(document) {
   const { _id, ...fields } = document;
   return { ...fields, id: String(_id) };
 }
+function uniqueCourseRows(rows) {
+  const seen = new Set();
+  return [...rows].sort((a, b) => Number(Boolean(a.demo)) - Number(Boolean(b.demo))).filter((course) => {
+    const title = String(course.title || '').trim().toLowerCase();
+    if (!title || seen.has(title)) return false;
+    seen.add(title);
+    return true;
+  });
+}
 async function currentUser(req) {
   let payload;
   try {
@@ -430,7 +439,7 @@ app.get('/api/auth/me', requireUser, (req, res) => res.json({ user: req.user }))
 app.get('/api/dashboard', requireUser, async (req, res) => {
   const user = req.user;
   const courseFilter = user.role === 'trainer' ? { trainer_id: user._id } : {};
-  const courseRows = await courses.find(courseFilter).sort({ next_session: 1 }).toArray();
+  const courseRows = uniqueCourseRows(await courses.find(courseFilter).sort({ next_session: 1 }).toArray());
   const trainerIds = [...new Set(courseRows.map((course) => course.trainer_id).filter(Boolean))];
   const trainers = await users.find({ _id: { $in: trainerIds } }, { projection: { name: 1 } }).toArray();
   const trainerNames = new Map(trainers.map((trainer) => [trainer._id, trainer.name]));
@@ -495,7 +504,7 @@ app.get('/api/dashboard', requireUser, async (req, res) => {
 });
 app.get('/api/courses', requireUser, async (req, res) => {
   const filter = req.user.role === 'trainer' ? { trainer_id: req.user._id } : {};
-  const list = await courses.find(filter).sort({ title: 1 }).toArray();
+  const list = uniqueCourseRows(await courses.find(filter).sort({ title: 1 }).toArray());
   const trainers = await users.find({ _id: { $in: list.map((course) => course.trainer_id).filter(Boolean) } }, { projection: { name: 1 } }).toArray();
   const names = new Map(trainers.map((trainer) => [trainer._id, trainer.name]));
   res.json(list.map((course) => ({ ...toApiDocument(course), trainer_name: names.get(course.trainer_id) || 'Campus trainer' })));
