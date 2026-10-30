@@ -834,20 +834,9 @@ function UserManagement({ notify }) {
     try {
       const result = await api(`/student-registration-requests/${request.id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
       await load();
-      const setupUrl = result.invitation?.manual_invitation_url;
-      if (setupUrl) setInvitation({
-        email: result.invitation.email,
-        url: setupUrl,
-        manual: true,
-        emailDeliveryFailed: Boolean(result.invitation.email_delivery_failed)
-      });
       notify(status === 'approved'
         ? result.credentials_ready
           ? `${request.name} is approved. They can now sign in with ZIN ID ${request.zin_id}.`
-          : result.invitation?.sent
-            ? `${request.name} is approved. A password setup link was sent to their email.`
-            : result.invitation
-              ? `${request.name} is approved. Copy and securely share the password setup link.`
           : `${request.name} is now a student. Send an invitation to let them set a password.`
         : `Registration request from ${request.name} was declined.`);
     } catch (e) { notify(e.message); }
@@ -883,7 +872,8 @@ function Login({ onLogin }) {
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [mode, setMode] = useState('credentials');
   const [registrationOpen, setRegistrationOpen] = useState(false); const [registrationDone, setRegistrationDone] = useState(false);
   const [registrationNotice, setRegistrationNotice] = useState('');
-  const [registration, setRegistration] = useState({ name: '', email: '', cohort: 'Cohort 08' });
+  const [registration, setRegistration] = useState({ name: '', password: '', cohort: 'Cohort 08' });
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [registrationAccount, setRegistrationAccount] = useState(null);
   const [copyMessage, setCopyMessage] = useState('');
   useEffect(() => { api('/demo-users').then(setUsers).catch(() => {}); }, []);
@@ -893,12 +883,15 @@ function Login({ onLogin }) {
   async function demo(role) { setBusy(true); setError(''); try { await onLogin({ role, demo: true }); } catch (err) { setError(err.message); setBusy(false); } }
   async function submitRegistration(e) {
     e.preventDefault(); setError(''); setRegistrationNotice('');
+    if (registration.password !== confirmPassword) { setError('Passwords do not match.'); return; }
     setBusy(true);
     try {
       const result = await api('/student-registration-requests', { method: 'POST', body: JSON.stringify(registration) });
       setRegistrationDone(true);
       setRegistrationAccount({ zinId: result.zinId, email: result.email });
       setRegistrationNotice(result.notification?.message || '');
+      setRegistration((current) => ({ ...current, password: '' }));
+      setConfirmPassword('');
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
   async function copyRegistrationValue(value, label) {
@@ -911,7 +904,7 @@ function Login({ onLogin }) {
   }
   if (selected) return <main className="login-screen">
     <section className="login-art"><a className="brand light" href="#" onClick={(e) => { e.preventDefault(); setSelected(null); }}><img className="brand-logo" src="/zyngram-logo.svg" alt="" /><span>ZYNGRAM</span></a><div className="art-copy"><p className="eyebrow light-eyebrow">YOUR SPACE, YOUR PACE</p><h1>Welcome<br />back to<br /><em>your campus.</em></h1><p>Come as you are. Pick up where you left off.</p></div><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-spark">✳</div><div className="art-foot"><span>DESIGNED FOR THE IN-BETWEEN</span><span>HYDERABAD · INDIA</span></div></section>
-    <section className="login-panel"><div className="login-content"><button className="back-link" onClick={() => { setSelected(null); setError(''); }}><ArrowRight className="back-arrow" size={15} /> All portals</button><span className="demo-pill"><span className="pulse-dot" /> {registrationOpen ? 'STUDENT REGISTRATION' : `${PORTALS.find((p) => p.role === selected)?.title.toUpperCase()} PORTAL`}</span><h2>{registrationOpen ? registrationDone ? 'Your ZIN ID is ready.' : 'Create your ZIN ID.' : <>Good to have<br />you back.</>}</h2><p className="muted login-intro">{registrationOpen ? registrationDone ? 'Your ZIN ID and login email are ready. After approval, use the one-time password link sent to your contact email.' : 'Create your account with your name and contact email. An administrator must approve it before you can set your password.' : 'Sign in with your campus account to continue.'}</p>
+    <section className="login-panel"><div className="login-content"><button className="back-link" onClick={() => { setSelected(null); setError(''); }}><ArrowRight className="back-arrow" size={15} /> All portals</button><span className="demo-pill"><span className="pulse-dot" /> {registrationOpen ? 'STUDENT REGISTRATION' : `${PORTALS.find((p) => p.role === selected)?.title.toUpperCase()} PORTAL`}</span><h2>{registrationOpen ? registrationDone ? 'Your ZIN ID is ready.' : 'Create your ZIN ID.' : <>Good to have<br />you back.</>}</h2><p className="muted login-intro">{registrationOpen ? registrationDone ? 'Your ZIN ID and login email are ready. Save them securely; you can sign in after approval.' : 'Create your account with your name and a password. An administrator must approve it before you can sign in.' : 'Sign in with your campus account to continue.'}</p>
       {registrationOpen ? registrationDone
         ? <section className="registration-success" aria-label="Your student account details">
           <div className="registration-success-heading"><span className="registration-success-icon"><CheckCircle2 size={20} /></span><span><strong>ZIN ID created</strong><small>Keep these sign-in details somewhere safe.</small></span></div>
@@ -926,9 +919,9 @@ function Login({ onLogin }) {
         </section>
         : <form className="credential-form" onSubmit={submitRegistration}>
           <label htmlFor="registration-name">Full name</label><input id="registration-name" required minLength={2} maxLength={100} value={registration.name} onChange={(e) => setRegistration({ ...registration, name: e.target.value })} />
-          <label htmlFor="registration-email">Contact email</label><input id="registration-email" type="email" required maxLength={254} value={registration.email} onChange={(e) => setRegistration({ ...registration, email: e.target.value })} />
-          <label htmlFor="registration-cohort">Cohort</label><input id="registration-cohort" required minLength={2} maxLength={100} value={registration.cohort} onChange={(e) => setRegistration({ ...registration, cohort: e.target.value })} />
-          <small className="registration-hint">We’ll create your unique ZIN ID. After approval, a one-time password setup link will be sent to your contact email.</small>
+          <label htmlFor="registration-password">Create password</label><input id="registration-password" type="password" autoComplete="new-password" required minLength={12} maxLength={200} value={registration.password} onChange={(e) => setRegistration({ ...registration, password: e.target.value })} />
+          <label htmlFor="registration-confirm-password">Confirm password</label><input id="registration-confirm-password" type="password" autoComplete="new-password" required minLength={12} maxLength={200} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+          <small className="registration-hint">Use at least 12 characters. We’ll create your unique ZIN ID; login becomes available after administrator approval.</small>
           {error && <p className="error-message" role="alert">{error}</p>}<button className="button-dark full-width" disabled={busy}>{busy ? 'Creating your ZIN ID…' : 'Create ZIN ID'} <ArrowRight size={16} /></button>
           <button className="demo-switch" type="button" onClick={() => { setRegistrationOpen(false); setError(''); }}>Back to student sign in</button>
         </form>

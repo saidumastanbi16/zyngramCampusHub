@@ -510,7 +510,7 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   });
   assert.equal(adminLogin.status, 200);
   const registration = await request('/student-registration-requests', { method: 'POST', body: {
-    name: 'New Campus Learner', email: 'new-campus-learner@example.test', cohort: 'Cohort 10'
+    name: 'New Campus Learner', password: 'new-campus-password-2026', cohort: 'Cohort 10'
   } });
   assert.equal(registration.status, 201);
   assert.match(registration.body.zinId, /^NE\d{12}EW$/);
@@ -518,7 +518,7 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal(registration.body.notification.sent, false);
   assert.match(registration.body.notification.message, /not configured/);
   assert.equal((await request('/auth/login', { method: 'POST', body: {
-    role: 'student', email: registration.body.zinId, password: 'not-set-yet-password'
+    role: 'student', email: registration.body.zinId, password: 'new-campus-password-2026'
   } })).status, 403);
   const learnersBeforeApproval = await request('/course-learners?courseId=c-product', { cookie: trainerLogin.cookie });
   assert.equal(learnersBeforeApproval.status, 200);
@@ -526,7 +526,7 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal((await request('/student-registration-requests', { cookie: studentCookie })).status, 403);
   assert.equal((await request('/student-registration-requests')).status, 401);
   assert.equal((await request('/student-registration-requests', { method: 'POST', body: {
-    name: 'Missing Contact Email'
+    name: 'Short Password', password: 'short'
   } })).status, 400);
   const pendingRegistrations = await request('/student-registration-requests', { cookie: adminLogin.cookie });
   assert.equal(pendingRegistrations.status, 200);
@@ -538,9 +538,7 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
     method: 'PATCH', cookie: adminLogin.cookie, body: { status: 'approved' }
   });
   assert.equal(approvedRegistration.status, 200);
-  assert.equal(approvedRegistration.body.credentials_ready, false);
-  assert.equal(approvedRegistration.body.invitation?.email, 'new-campus-learner@example.test');
-  assert.match(approvedRegistration.body.invitation?.manual_invitation_url || '', /\?invite=/);
+  assert.equal(approvedRegistration.body.credentials_ready, true);
   assert.equal(approvedRegistration.body.user.email, registration.body.email);
   assert.equal(approvedRegistration.body.user.zin_id, registration.body.zinId);
   assert.equal(approvedRegistration.body.user.role, 'student');
@@ -555,22 +553,26 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal(newLearnerTask.status, 201);
   assert.equal((await request('/progress', { cookie: trainerLogin.cookie })).body.learners.some((learner) => learner.name === 'New Campus Learner'), true);
   const approvedStudentLogin = await request('/auth/login', { method: 'POST', body: {
-    role: 'student', email: registration.body.zinId, password: 'not-set-yet-password'
+    role: 'student', email: registration.body.zinId, password: 'new-campus-password-2026'
   } });
-  assert.equal(approvedStudentLogin.status, 401);
+  assert.equal(approvedStudentLogin.status, 200);
+  assert.equal(approvedStudentLogin.body.user.zin_id, registration.body.zinId);
+  assert.equal((await request('/auth/login', { method: 'POST', body: {
+    role: 'student', email: registration.body.email, password: 'new-campus-password-2026'
+  } })).status, 200);
   const usersAfterApproval = await request('/users', { cookie: adminLogin.cookie });
   const createdStudent = usersAfterApproval.body.find((item) => item.email === registration.body.email);
   assert.equal(createdStudent?.zin_id, registration.body.zinId);
   assert.equal('password_hash' in createdStudent, false);
   const rejectedRegistration = await request('/student-registration-requests', { method: 'POST', body: {
-    name: 'Declined Candidate', email: 'declined-candidate@example.test', cohort: 'Cohort 10'
+    name: 'Declined Candidate', password: 'declined-candidate-2026', cohort: 'Cohort 10'
   } });
   assert.equal(rejectedRegistration.status, 201);
   assert.equal((await request(`/student-registration-requests/${rejectedRegistration.body.requestId}`, {
     method: 'PATCH', cookie: adminLogin.cookie, body: { status: 'rejected' }
   })).body.status, 'rejected');
   assert.equal((await request('/auth/login', { method: 'POST', body: {
-    role: 'student', email: rejectedRegistration.body.zinId, password: 'not-set-yet-password'
+    role: 'student', email: rejectedRegistration.body.zinId, password: 'declined-candidate-2026'
   } })).status, 403);
   assert.equal((await request('/users', { cookie: adminLogin.cookie })).body.some((item) => item.email === rejectedRegistration.body.email), false);
   assert.deepEqual((await request('/exam-settings', { cookie: adminLogin.cookie })).body, { passMark: 70 });

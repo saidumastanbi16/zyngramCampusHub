@@ -1484,21 +1484,19 @@ app.post('/api/admin/demo-data', requireUser, requireRoles('admin'), async (req,
 app.post('/api/student-registration-requests', async (req, res) => {
   const parsed = z.object({
     name: z.string().trim().min(2).max(100),
-    email: z.string().trim().email().max(254),
-    password: z.string().min(12).max(200).optional(),
+    password: z.string().min(12).max(200),
     cohort: z.string().trim().min(2).max(100).default('Cohort 08')
   }).safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Enter your name, a valid contact email, and cohort.' });
+  if (!parsed.success) return res.status(400).json({ error: 'Enter your name and a password between 12 and 200 characters.' });
   const zinId = await createZinId(parsed.data.name);
   const email = `${zinId.toLowerCase()}@zyngram.com`;
   if (await users.findOne({ email })) return res.status(409).json({ error: 'An account already uses this ZIN ID. Please submit again.' });
   const now = new Date().toISOString();
-  const { password, email: contactEmail, ...registrationFields } = parsed.data;
+  const { password, ...registrationFields } = parsed.data;
   const request = {
     _id: `registration-${crypto.randomUUID()}`,
     ...registrationFields,
-    ...(password ? { password_hash: createPasswordHash(password) } : {}),
-    contact_email: contactEmail.toLowerCase(),
+    password_hash: createPasswordHash(password),
     zin_id: zinId,
     email,
     status: 'pending',
@@ -1553,7 +1551,6 @@ app.patch('/api/student-registration-requests/:id', requireUser, requireRoles('a
     cohort: registration.cohort,
     avatar: registration.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
     ...(registration.password_hash ? { password_hash: registration.password_hash } : { password_hash: null }),
-    ...(registration.contact_email ? { contact_email: registration.contact_email } : {}),
     ...(registration.zin_id ? { zin_id: registration.zin_id } : {}),
     created_at: reviewedAt
   };
@@ -1573,39 +1570,7 @@ app.patch('/api/student-registration-requests/:id', requireUser, requireRoles('a
     throw error;
   }
   await recordAudit(req.user._id, 'student_registration.approve', 'student_registration_request', registration._id);
-  let invitation;
-  if (!registration.password_hash) {
-    const token = crypto.randomBytes(32).toString('base64url');
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    try {
-      const url = invitationUrl(token);
-      await users.updateOne({ _id: person._id }, {
-        $set: { invite_token_hash: tokenHash, invite_expires_at: expiresAt }
-      });
-      if (invitationMailConfigured() && registration.contact_email) {
-        try {
-          await sendInvitationEmail({ email: registration.contact_email, name: registration.name, invitationUrl: url });
-          invitation = { email: registration.contact_email, sent: true };
-        } catch (error) {
-          console.error('Approved student invitation email failed:', error);
-          invitation = { email: registration.contact_email, sent: false, manual_invitation_url: url, email_delivery_failed: true };
-        }
-      } else {
-        invitation = { email: registration.contact_email || registration.email, sent: false, manual_invitation_url: url };
-      }
-    } catch (error) {
-      console.error('Approved student invitation could not be created:', error);
-      invitation = { email: registration.contact_email || registration.email, sent: false, error: error.message };
-    }
-  }
-  res.json({
-    id: registration._id,
-    status: 'approved',
-    credentials_ready: Boolean(registration.password_hash),
-    user: publicUser(person),
-    invitation
-  });
+  res.json({ id: registration._id, status: 'approved', credentials_ready: Boolean(registration.password_hash), user: publicUser(person) });
 });
 app.get('/api/users', requireUser, requireRoles('admin'), async (_req, res) => {
   const allUsers = await users.find({}, { projection: { name: 1, email: 1, role: 1, cohort: 1, avatar: 1, zin_id: 1, created_at: 1, password_hash: 1 } }).sort({ role: 1, name: 1 }).toArray();
