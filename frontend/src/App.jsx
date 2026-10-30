@@ -585,6 +585,23 @@ function Internships({ data, user, notify }) {
   }
   return <div className="page-content"><Heading eyebrow="LEARNING THROUGH REAL WORK" title={canManage ? 'Internship opportunities.' : 'Find an internship.'} description={canManage ? 'Share opportunities and follow applications from learners in your courses.' : 'Explore practical experience connected to your learning and track each application.'} />
     {error && <p className="error-message" role="alert">{error}</p>}
+    {user.role === 'student' && <section className="panel resume-upload-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>{studentResume ? 'Your internship resume' : 'Upload your internship resume'}</h2>
+          <p>{studentResume ? `Saved resume: ${studentResume.filename}` : 'Upload a PDF resume to use when applying for internships.'}</p>
+        </div>
+        {studentResume && <a className="button-secondary" href={apiUrl('/student-resume/file')} target="_blank" rel="noopener noreferrer"><Download size={15} /> View resume</a>}
+      </div>
+      <form className="resume-upload-form" onSubmit={uploadStudentResume}>
+        <label htmlFor="student-internship-resume">Resume PDF (maximum 5 MB)</label>
+        <input id="student-internship-resume" type="file" accept="application/pdf,.pdf" onChange={(event) => setResumeUploadFile(event.target.files?.[0] || null)} />
+        {resumeUploadFile && <small>{resumeUploadFile.name} · {Math.ceil(resumeUploadFile.size / 1024)} KB</small>}
+        <button className="button-primary" disabled={busy || !resumeUploadFile || resumeUploadFile.size > 5 * 1024 * 1024}>
+          <Upload size={15} /> {busy ? 'Uploading…' : studentResume ? 'Replace resume' : 'Upload resume'}
+        </button>
+      </form>
+    </section>}
     {selectedInternship && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedInternship(null); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="internship-apply-title"><div className="modal-top"><span className="modal-icon"><BriefcaseBusiness size={19} /></span><button className="icon-button" aria-label="Close" onClick={() => setSelectedInternship(null)}><X size={19} /></button></div><p className="eyebrow">APPLICATION · {selectedInternship.organization}</p><h2 id="internship-apply-title">{selectedInternship.title}</h2><p className="muted">{studentResume ? `Your saved resume (${studentResume.filename}) will be attached automatically. Upload another PDF to replace it for this application.` : 'Upload a PDF resume to apply. Maximum file size: 5 MB.'}</p><form onSubmit={apply}><label htmlFor="internship-resume">{studentResume ? 'Use a different resume (optional)' : 'Resume PDF'}</label><input id="internship-resume" type="file" accept="application/pdf,.pdf" required={!studentResume} onChange={(event) => setResumeFile(event.target.files?.[0] || null)} />{resumeFile && <small>{resumeFile.name} · {Math.ceil(resumeFile.size / 1024)} KB</small>}{error && <p className="error-message" role="alert">{error}</p>}<div className="modal-actions"><button className="button-secondary" type="button" onClick={() => setSelectedInternship(null)}>Cancel</button><button className="button-primary" disabled={busy || (!resumeFile && !studentResume) || (resumeFile && resumeFile.size > 5 * 1024 * 1024)}>{busy ? 'Submitting…' : 'Submit application'} <Send size={15} /></button></div></form></section></div>}
     {canManage && <form className="panel internship-create" onSubmit={create}>
       <div className="panel-heading"><div><h2>Post an opportunity</h2><p>Publish details for students and review submitted resumes.</p></div></div>

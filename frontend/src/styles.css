@@ -693,6 +693,12 @@ kbd { color: #9aa8b8; border-color: #39485b; background: #202c3a; }
 .internship-description { margin: 0; color: #b9c5d3; font-size: 11px; line-height: 1.6; }
 .internship-apply-row { display: flex; justify-content: flex-end; }
 .internship-create textarea { resize: vertical; }
+.resume-upload-panel { display: grid; gap: 12px; padding: 16px 17px; margin-bottom: 16px; }
+.resume-upload-panel .panel-heading { align-items: center; margin-bottom: 0; }
+.resume-upload-form { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 10px; align-items: end; }
+.resume-upload-form label { grid-column: 1 / -1; color: #aab7c6; font-size: 10px; }
+.resume-upload-form input { width: 100%; min-height: 36px; padding: 6px 8px; color: #e8edf5; border: 1px solid #3a495c; border-radius: 6px; background: #192431; font-size: 11px; }
+.resume-upload-form small { grid-column: 1 / -1; color: #aab7c6; }
 .internship-applications { display: grid; border-top: 1px solid #2b3747; }
 .application-row, .review-history-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-bottom: 1px solid #2b3747; }
 .application-row:last-child, .review-history-row:last-child { border-bottom: 0; }
