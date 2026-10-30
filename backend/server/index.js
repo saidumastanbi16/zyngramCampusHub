@@ -731,7 +731,8 @@ app.get('/api/lessons/:id/resources/:fileId', requireUser, async (req, res) => {
 });
 app.post('/api/lessons/:id/complete', requireUser, requireRoles('student'), async (req, res) => {
   const lesson = await lessons.findOne({ _id: req.params.id, status: 'published' });
-  if (!lesson || !await tasks.findOne({ learner_id: req.user._id, course_id: lesson.course_id })) return res.status(404).json({ error: 'Lesson not found in your learning paths.' });
+  const availableCourse = lesson ? await courses.findOne({ _id: lesson.course_id }, { projection: { _id: 1 } }) : null;
+  if (!lesson || !availableCourse) return res.status(404).json({ error: 'Lesson not found in your learning paths.' });
   const progress = await studentProgress.findOne({ learner_id: req.user._id, course_id: lesson.course_id });
   if (lesson.week_number > (progress?.unlocked_week || 1)) return res.status(423).json({ error: 'Pass the earlier exam or ask your trainer for an authorized unlock.' });
   const completedAt = new Date().toISOString();
