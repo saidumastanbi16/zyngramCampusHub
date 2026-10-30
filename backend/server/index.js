@@ -625,9 +625,16 @@ app.patch('/api/live-courses/:id/recording', requireUser, requireRoles('trainer'
   res.json({ ok: true, recording_published_at: updatedAt });
 });
 app.get('/api/lessons', requireUser, async (req, res) => {
-  const courseIds = req.user.role === 'student'
-    ? await tasks.distinct('course_id', { learner_id: req.user._id })
-    : (await courses.find(req.user.role === 'trainer' ? { trainer_id: req.user._id } : {}, { projection: { _id: 1 } }).toArray()).map((course) => course._id);
+  let courseIds;
+  if (req.user.role === 'student') {
+    const [assignedCourseIds, availableCourses] = await Promise.all([
+      tasks.distinct('course_id', { learner_id: req.user._id }),
+      courses.find({}, { projection: { _id: 1 } }).toArray()
+    ]);
+    courseIds = [...new Set([...assignedCourseIds, ...availableCourses.map((course) => course._id)])];
+  } else {
+    courseIds = (await courses.find(req.user.role === 'trainer' ? { trainer_id: req.user._id } : {}, { projection: { _id: 1 } }).toArray()).map((course) => course._id);
+  }
   const progressRows = req.user.role === 'student'
     ? await studentProgress.find({ learner_id: req.user._id, course_id: { $in: courseIds } }).toArray()
     : [];

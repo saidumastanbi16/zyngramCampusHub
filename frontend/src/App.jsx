@@ -189,6 +189,8 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
   const [busy, setBusy] = useState(false);
   const [editingId, setEditingId] = useState('');
   const [retainedResources, setRetainedResources] = useState([]);
+  const [studentResume, setStudentResume] = useState(null);
+  const [resumeUploadFile, setResumeUploadFile] = useState(null);
   const [draft, setDraft] = useState({ title: '', description: '', weekNumber: 1, position: 1 });
   const [resources, setResources] = useState([{ type: 'link', title: '', url: '' }]);
   const [lessonFile, setLessonFile] = useState(null);
@@ -200,6 +202,10 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
     setActiveLessonId((current) => rows.some((lesson) => lesson.id === current) ? current : rows[0]?.id || '');
   }), [courseId]);
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
+  useEffect(() => {
+    if (user.role !== 'student') return;
+    api('/student-resume').then((result) => setStudentResume(result.resume)).catch((e) => setError(e.message));
+  }, [user.role]);
   useEffect(() => {
     if (!isTrainer) api('/class-sessions').then(setSessions).catch((e) => setError(e.message));
   }, [isTrainer]);
@@ -254,6 +260,25 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
   async function completeLesson(lesson) {
     try { await api(`/lessons/${lesson.id}/complete`, { method: 'POST' }); await load(); notify('Lesson marked complete.'); }
     catch (e) { notify(e.message); }
+  }
+  async function uploadStudentResume(event) {
+    event.preventDefault();
+    if (!resumeUploadFile) return;
+    const form = new FormData();
+    form.append('resume', resumeUploadFile);
+    setBusy(true);
+    setError('');
+    try {
+      await uploadApi('/student-resume', form);
+      const result = await api('/student-resume');
+      setStudentResume(result.resume);
+      setResumeUploadFile(null);
+      notify('Resume uploaded.');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
   }
   async function assignTask(event) {
     event.preventDefault(); setBusy(true); setError('');
