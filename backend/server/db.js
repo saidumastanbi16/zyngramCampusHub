@@ -30,6 +30,17 @@ const sampleTasks = [
   { _id: 't-wireframes', learner_id: 'u-student', title: 'Plan a digital campaign', course_id: 'c-ui', due_date: '2026-10-14', status: 'in_review', description: 'Define a target audience, campaign message, and channel mix for a sample product.', submission_url: 'https://example.test/aarav-campaign', feedback: null, updated_at: new Date().toISOString() },
   { _id: 't-reflection', learner_id: 'u-student', title: 'Prepare a monthly budget', course_id: 'c-portfolio', due_date: '2026-10-12', status: 'complete', description: 'Build a sample monthly budget and explain the saving choices you made.', submission_url: 'https://example.test/aarav-budget', feedback: 'Your budget is clear and well organised. Add a short note about how you would adjust it for an unexpected expense.', updated_at: new Date().toISOString() }
 ];
+const sampleLessons = [
+  { _id: 'lesson-full-stack-html', course_id: 'c-product', title: 'HTML foundations', description: 'Learn semantic HTML structure and build a clear page layout.', week_number: 1, position: 1, status: 'published', resources: [{ type: 'video', title: 'HTML crash course', url: 'https://www.youtube.com/watch?v=UB1O30fR-EE' }, { type: 'note', title: 'HTML element reference', url: 'https://developer.mozilla.org/en-US/docs/Web/HTML/Element' }] },
+  { _id: 'lesson-full-stack-css', course_id: 'c-product', title: 'Responsive CSS', description: 'Use modern CSS layout tools to create responsive screens.', week_number: 2, position: 2, status: 'published', resources: [{ type: 'video', title: 'CSS crash course', url: 'https://www.youtube.com/watch?v=yfoY53QXEnI' }, { type: 'note', title: 'Responsive design guide', url: 'https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/CSS_layout/Responsive_Design' }] },
+  { _id: 'lesson-full-stack-js', course_id: 'c-product', title: 'JavaScript essentials', description: 'Practice variables, functions, arrays, and browser events.', week_number: 3, position: 3, status: 'published', resources: [{ type: 'video', title: 'JavaScript fundamentals', url: 'https://www.youtube.com/watch?v=PkZNo7MFNFg' }, { type: 'note', title: 'JavaScript reference', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide' }] },
+  { _id: 'lesson-marketing-audience', course_id: 'c-ui', title: 'Audience research', description: 'Define customer segments, needs, and campaign objectives.', week_number: 1, position: 1, status: 'published', resources: [{ type: 'video', title: 'Target audience workshop', url: 'https://www.youtube.com/watch?v=LjS7Nb8FfSg' }, { type: 'note', title: 'Marketing audience guide', url: 'https://support.google.com/google-ads/answer/2497941' }] },
+  { _id: 'lesson-marketing-content', course_id: 'c-ui', title: 'Content strategy', description: 'Plan useful channel content around a consistent campaign message.', week_number: 2, position: 2, status: 'published', resources: [{ type: 'video', title: 'Digital marketing strategy', url: 'https://www.youtube.com/watch?v=bixR-KIJKYM' }, { type: 'note', title: 'Content strategy basics', url: 'https://developers.google.com/search/docs/fundamentals/creating-helpful-content' }] },
+  { _id: 'lesson-marketing-analytics', course_id: 'c-ui', title: 'Campaign analytics', description: 'Measure campaign reach, engagement, conversion, and return.', week_number: 3, position: 3, status: 'published', resources: [{ type: 'video', title: 'Marketing analytics overview', url: 'https://www.youtube.com/watch?v=9w8c0k6D9bE' }, { type: 'note', title: 'Campaign measurement', url: 'https://support.google.com/analytics/answer/9143382' }] },
+  { _id: 'lesson-finance-budgeting', course_id: 'c-portfolio', title: 'Personal budgeting', description: 'Plan income, essential spending, savings, and flexible expenses.', week_number: 1, position: 1, status: 'published', resources: [{ type: 'video', title: 'Budgeting fundamentals', url: 'https://www.youtube.com/watch?v=Qv8IfUFTXq8' }, { type: 'note', title: 'Budget planning guide', url: 'https://www.consumerfinance.gov/consumer-tools/budgeting/' }] },
+  { _id: 'lesson-finance-statements', course_id: 'c-portfolio', title: 'Financial statements', description: 'Read income statements and understand profit and cash flow.', week_number: 2, position: 2, status: 'published', resources: [{ type: 'video', title: 'Financial statements explained', url: 'https://www.youtube.com/watch?v=Z5K9P6ZP5Bw' }, { type: 'note', title: 'Financial statement basics', url: 'https://www.investopedia.com/terms/f/financial-statements.asp' }] },
+  { _id: 'lesson-finance-forecast', course_id: 'c-portfolio', title: 'Cash-flow forecasting', description: 'Forecast a monthly cash-flow statement and manage uncertainty.', week_number: 3, position: 3, status: 'published', resources: [{ type: 'video', title: 'Cash flow tutorial', url: 'https://www.youtube.com/watch?v=Y0yM5v0M6hQ' }, { type: 'note', title: 'Cash flow guide', url: 'https://www.consumerfinance.gov/ask-cfpb/what-is-a-budget-en-yes-i-can-spend-less/' }] }
+];
 const sampleAttendance = [
   ['c-product', '2026-10-12', 'present'], ['c-product', '2026-10-09', 'present'], ['c-product', '2026-10-07', 'present'],
   ['c-ui', '2026-10-13', 'present'], ['c-ui', '2026-10-10', 'late'], ['c-portfolio', '2026-10-08', 'present']
@@ -42,6 +53,11 @@ const sampleAnnouncements = [
 
 export const databasePromise = client.connect().then(async () => {
   const database = client.db(databaseName);
+  await Promise.all(sampleLessons.map((lesson) => database.collection('lessons').updateOne(
+    { _id: lesson._id },
+    { $set: lesson },
+    { upsert: true }
+  )));
   await Promise.all([
     database.collection('users').createIndex({ email: 1 }, { unique: true }),
     database.collection('attendance').createIndex({ user_id: 1, course_id: 1, session_date: 1 }, { unique: true }),

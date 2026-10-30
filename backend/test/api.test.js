@@ -393,6 +393,10 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal(passedWeekTwo.body.passed, true);
   assert.equal((await request('/certificates', { cookie: studentCookie })).body.some((certificate) => certificate.course_id === 'c-product'), false);
   assert.equal((await request(`/lessons/${secondLesson.body.id}/complete`, { method: 'POST', cookie: studentCookie })).status, 200);
+  const seededCourseLessons = (await request('/lessons?courseId=c-product', { cookie: studentCookie })).body;
+  for (const lesson of seededCourseLessons) {
+    if (!lesson.completed) await request(`/lessons/${lesson.id}/complete`, { method: 'POST', cookie: studentCookie });
+  }
   assert.equal((await request('/certificates', { cookie: studentCookie })).body.some((certificate) => certificate.course_id === 'c-product'), true);
   assert.equal((await request('/exams', { cookie: trainerLogin.cookie })).body.find((exam) => exam.id === createdExam.body.id).attempts[0].learner_name, 'Aarav Reddy');
 

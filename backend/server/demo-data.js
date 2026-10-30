@@ -21,6 +21,17 @@ const demoAssignments = [
   { courseTitle: 'Digital Marketing', title: 'Create a digital marketing campaign plan', description: 'Prepare a one-week campaign plan with a target audience, message, channels, sample post, and a measure of success.' },
   { courseTitle: 'Finance Fundamentals', title: 'Prepare a monthly budget summary', description: 'Create a sample monthly budget with income, expenses, savings, and a short cash-flow explanation.' }
 ];
+const demoLessons = [
+  { _id: 'lesson-demo-full-stack-html', courseTitle: 'Full Stack Web Development', title: 'HTML foundations', description: 'Build a semantic page structure with accessible HTML.', week_number: 1, position: 1, status: 'published', resources: [{ type: 'video', title: 'HTML crash course', url: 'https://www.youtube.com/watch?v=UB1O30fR-EE' }, { type: 'note', title: 'HTML element reference', url: 'https://developer.mozilla.org/en-US/docs/Web/HTML/Element' }] },
+  { _id: 'lesson-demo-full-stack-css', courseTitle: 'Full Stack Web Development', title: 'Responsive CSS', description: 'Create adaptable layouts with modern CSS.', week_number: 2, position: 2, status: 'published', resources: [{ type: 'video', title: 'CSS crash course', url: 'https://www.youtube.com/watch?v=yfoY53QXEnI' }, { type: 'note', title: 'Responsive design guide', url: 'https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/CSS_layout/Responsive_Design' }] },
+  { _id: 'lesson-demo-full-stack-js', courseTitle: 'Full Stack Web Development', title: 'JavaScript essentials', description: 'Practice browser JavaScript, functions, and events.', week_number: 3, position: 3, status: 'published', resources: [{ type: 'video', title: 'JavaScript fundamentals', url: 'https://www.youtube.com/watch?v=PkZNo7MFNFg' }, { type: 'note', title: 'JavaScript reference', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide' }] },
+  { _id: 'lesson-demo-marketing-audience', courseTitle: 'Digital Marketing', title: 'Audience research', description: 'Define customer segments and campaign objectives.', week_number: 1, position: 1, status: 'published', resources: [{ type: 'video', title: 'Target audience workshop', url: 'https://www.youtube.com/watch?v=LjS7Nb8FfSg' }, { type: 'note', title: 'Marketing audience guide', url: 'https://support.google.com/google-ads/answer/2497941' }] },
+  { _id: 'lesson-demo-marketing-content', courseTitle: 'Digital Marketing', title: 'Content strategy', description: 'Plan channel content around a clear campaign message.', week_number: 2, position: 2, status: 'published', resources: [{ type: 'video', title: 'Digital marketing strategy', url: 'https://www.youtube.com/watch?v=bixR-KIJKYM' }, { type: 'note', title: 'Content strategy basics', url: 'https://developers.google.com/search/docs/fundamentals/creating-helpful-content' }] },
+  { _id: 'lesson-demo-marketing-analytics', courseTitle: 'Digital Marketing', title: 'Campaign analytics', description: 'Measure reach, engagement, conversion, and return.', week_number: 3, position: 3, status: 'published', resources: [{ type: 'video', title: 'Marketing analytics overview', url: 'https://www.youtube.com/watch?v=9w8c0k6D9bE' }, { type: 'note', title: 'Campaign measurement', url: 'https://support.google.com/analytics/answer/9143382' }] },
+  { _id: 'lesson-demo-finance-budget', courseTitle: 'Finance Fundamentals', title: 'Personal budgeting', description: 'Plan income, spending, savings, and flexible costs.', week_number: 1, position: 1, status: 'published', resources: [{ type: 'video', title: 'Budgeting fundamentals', url: 'https://www.youtube.com/watch?v=Qv8IfUFTXq8' }, { type: 'note', title: 'Budget planning guide', url: 'https://www.consumerfinance.gov/consumer-tools/budgeting/' }] },
+  { _id: 'lesson-demo-finance-statements', courseTitle: 'Finance Fundamentals', title: 'Financial statements', description: 'Read income statements and understand cash flow.', week_number: 2, position: 2, status: 'published', resources: [{ type: 'video', title: 'Financial statements explained', url: 'https://www.youtube.com/watch?v=Z5K9P6ZP5Bw' }, { type: 'note', title: 'Financial statement basics', url: 'https://www.investopedia.com/terms/f/financial-statements.asp' }] },
+  { _id: 'lesson-demo-finance-forecast', courseTitle: 'Finance Fundamentals', title: 'Cash-flow forecasting', description: 'Forecast monthly cash flow and manage uncertainty.', week_number: 3, position: 3, status: 'published', resources: [{ type: 'video', title: 'Cash flow tutorial', url: 'https://www.youtube.com/watch?v=Y0yM5v0M6hQ' }, { type: 'note', title: 'Cash flow guide', url: 'https://www.consumerfinance.gov/ask-cfpb/what-is-a-budget-en-yes-i-can-spend-less/' }] }
+];
 
 const demoAnnouncements = [
   { _id: 'demo-announcement-welcome', title: 'Welcome to the demo campus', body: 'These fictional sample records help demonstrate the campus learning workflows.', audience: 'All learners', category: 'Demo update' },
@@ -95,6 +106,12 @@ export async function provisionDemoData(database, actorId) {
   const preparedCourses = await courses.find({ title: { $in: demoCourses.map((course) => course.title) } }).toArray();
   const courseIdByTitle = new Map(preparedCourses.map((course) => [course.title, course._id]));
   if (courseIdByTitle.size !== demoCourses.length) throw new Error('A demo course could not be prepared; no student tasks were added.');
+  const lessons = database.collection('lessons');
+  for (const lesson of demoLessons) {
+    const courseId = courseIdByTitle.get(lesson.courseTitle);
+    const { courseTitle, ...fields } = lesson;
+    await lessons.updateOne({ _id: lesson._id }, { $set: { ...fields, course_id: courseId, demo: true } }, { upsert: true });
+  }
   const studentRecords = demoUsers.filter((person) => person.role === 'student').map((person) => usersByEmail.get(person.email));
   const dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const taskOperations = [];

@@ -157,6 +157,23 @@ function uniqueCourseRows(rows) {
     return true;
   });
 }
+async function coursesWithProgress(courseRows, learnerId) {
+  if (!learnerId) return courseRows;
+  const courseIds = courseRows.map((course) => course._id);
+  const courseLessons = await lessons.find({ course_id: { $in: courseIds }, status: 'published' }, { projection: { _id: 1, course_id: 1 } }).toArray();
+  const lessonIds = courseLessons.map((lesson) => lesson._id);
+  const completed = await lessonProgress.find({ learner_id: learnerId, lesson_id: { $in: lessonIds } }, { projection: { lesson_id: 1 } }).toArray();
+  const completedIds = new Set(completed.map((progress) => progress.lesson_id));
+  const totalByCourse = new Map();
+  for (const lesson of courseLessons) totalByCourse.set(lesson.course_id, (totalByCourse.get(lesson.course_id) || 0) + 1);
+  const completedByCourse = new Map();
+  for (const lesson of courseLessons) if (completedIds.has(lesson._id)) completedByCourse.set(lesson.course_id, (completedByCourse.get(lesson.course_id) || 0) + 1);
+  return courseRows.map((course) => {
+    const total = totalByCourse.get(course._id) || 0;
+    const done = completedByCourse.get(course._id) || 0;
+    return { ...course, progress: total ? Math.round(done / total * 100) : 0 };
+  });
+}
 async function currentUser(req) {
   let payload;
   try {
@@ -439,7 +456,7 @@ app.get('/api/auth/me', requireUser, (req, res) => res.json({ user: req.user }))
 app.get('/api/dashboard', requireUser, async (req, res) => {
   const user = req.user;
   const courseFilter = user.role === 'trainer' ? { trainer_id: user._id } : {};
-  const courseRows = uniqueCourseRows(await courses.find(courseFilter).sort({ next_session: 1 }).toArray());
+  const courseRows = await coursesWithProgress(uniqueCourseRows(await courses.find(courseFilter).sort({ next_session: 1 }).toArray()), user.role === 'student' ? user._id : null);
   const trainerIds = [...new Set(courseRows.map((course) => course.trainer_id).filter(Boolean))];
   const trainers = await users.find({ _id: { $in: trainerIds } }, { projection: { name: 1 } }).toArray();
   const trainerNames = new Map(trainers.map((trainer) => [trainer._id, trainer.name]));
@@ -504,7 +521,7 @@ app.get('/api/dashboard', requireUser, async (req, res) => {
 });
 app.get('/api/courses', requireUser, async (req, res) => {
   const filter = req.user.role === 'trainer' ? { trainer_id: req.user._id } : {};
-  const list = uniqueCourseRows(await courses.find(filter).sort({ title: 1 }).toArray());
+  const list = await coursesWithProgress(uniqueCourseRows(await courses.find(filter).sort({ title: 1 }).toArray()), req.user.role === 'student' ? req.user._id : null);
   const trainers = await users.find({ _id: { $in: list.map((course) => course.trainer_id).filter(Boolean) } }, { projection: { name: 1 } }).toArray();
   const names = new Map(trainers.map((trainer) => [trainer._id, trainer.name]));
   res.json(list.map((course) => ({ ...toApiDocument(course), trainer_name: names.get(course.trainer_id) || 'Campus trainer' })));
