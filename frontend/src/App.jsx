@@ -189,8 +189,6 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
   const [busy, setBusy] = useState(false);
   const [editingId, setEditingId] = useState('');
   const [retainedResources, setRetainedResources] = useState([]);
-  const [studentResume, setStudentResume] = useState(null);
-  const [resumeUploadFile, setResumeUploadFile] = useState(null);
   const [draft, setDraft] = useState({ title: '', description: '', weekNumber: 1, position: 1 });
   const [resources, setResources] = useState([{ type: 'link', title: '', url: '' }]);
   const [lessonFile, setLessonFile] = useState(null);
@@ -202,10 +200,6 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
     setActiveLessonId((current) => rows.some((lesson) => lesson.id === current) ? current : rows[0]?.id || '');
   }), [courseId]);
   useEffect(() => { load().catch((e) => setError(e.message)); }, [load]);
-  useEffect(() => {
-    if (user.role !== 'student') return;
-    api('/student-resume').then((result) => setStudentResume(result.resume)).catch((e) => setError(e.message));
-  }, [user.role]);
   useEffect(() => {
     if (!isTrainer) api('/class-sessions').then(setSessions).catch((e) => setError(e.message));
   }, [isTrainer]);
@@ -261,25 +255,6 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
     try { await api(`/lessons/${lesson.id}/complete`, { method: 'POST' }); await load(); notify('Lesson marked complete.'); }
     catch (e) { notify(e.message); }
   }
-  async function uploadStudentResume(event) {
-    event.preventDefault();
-    if (!resumeUploadFile) return;
-    const form = new FormData();
-    form.append('resume', resumeUploadFile);
-    setBusy(true);
-    setError('');
-    try {
-      await uploadApi('/student-resume', form);
-      const result = await api('/student-resume');
-      setStudentResume(result.resume);
-      setResumeUploadFile(null);
-      notify('Resume uploaded.');
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
   async function assignTask(event) {
     event.preventDefault(); setBusy(true); setError('');
     try { await api('/tasks', { method: 'POST', body: JSON.stringify({ ...taskDraft, courseId }) }); setTaskDraft({ learnerId: '', title: '', description: '', dueDate: '' }); notify('Practice task assigned.'); }
@@ -293,7 +268,6 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
   const lessonsComplete = items.length > 0 && items.every((lesson) => lesson.completed);
   return <div className="page-content"><Heading eyebrow="WEEK-WISE COURSE MATERIALS" title={isTrainer ? 'Course materials.' : 'Lessons & resources.'} description={isTrainer ? 'Organize lessons by week and share practice resources with learners in your courses.' : 'Work through each unlocked week, open its resources, and track lesson completion.'} />
     {error && <p className="error-message" role="alert">{error}</p>}
-    {user.role === 'student' && <section className="panel student-resume-panel"><div><p className="eyebrow">YOUR PROFILE</p><h2>Resume & internship matches</h2><p className="muted">Upload your PDF resume to get opportunities matched against the skills listed on it. Your resume stays private until you apply.</p>{studentResume && <div className="student-resume-status"><FileText size={16} /><span><b>{studentResume.filename}</b><small>Uploaded {new Date(studentResume.uploaded_at).toLocaleDateString('en-IN')} · {studentResume.page_count} pages</small></span><a className="text-link" href="/api/student-resume/file">View PDF <ArrowUpRight size={14} /></a></div>}</div><form className="student-resume-upload" onSubmit={uploadStudentResume}><label htmlFor="student-resume-upload">Resume PDF · max 5 MB<input id="student-resume-upload" type="file" accept="application/pdf,.pdf" required onChange={(event) => setResumeUploadFile(event.target.files?.[0] || null)} /></label>{resumeUploadFile && <small>{resumeUploadFile.name} · {Math.ceil(resumeUploadFile.size / 1024)} KB</small>}{studentResume && !studentResume.text_available && <small className="resume-help">This PDF has no selectable text. Upload a text-based PDF for skill matching.</small>}<button className="button-dark" disabled={busy || !resumeUploadFile || resumeUploadFile.size > 5 * 1024 * 1024}>{busy ? 'Uploading…' : studentResume ? 'Replace resume' : 'Upload resume'} <Upload size={15} /></button></form></section>}
     <div className="course-material-toolbar"><label>Course<select value={courseId} onChange={(event) => setCourseId(event.target.value)}>{data.courses.map((course) => <option value={course.id} key={course.id}>{course.title}</option>)}</select></label></div>
     {isTrainer && <form ref={lessonEditorRef} className="panel lesson-editor" onSubmit={saveLesson}><div className="panel-heading"><div><h2>{editingId ? 'Edit lesson' : 'Create lesson'}</h2><p>Resource links must use HTTPS.</p></div>{editingId && <button className="icon-button" type="button" aria-label="Cancel lesson edit" onClick={cancelEdit}> <X size={17} /></button>}</div><div className="form-grid"><label>Lesson title<input required minLength={3} maxLength={120} value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>{!editingId && <label>Week number<input required type="number" min="1" max="52" value={draft.weekNumber} onChange={(event) => setDraft({ ...draft, weekNumber: Number(event.target.value) })} /></label>}<label>Lesson order<input required type="number" min="1" max="100" value={draft.position} onChange={(event) => setDraft({ ...draft, position: Number(event.target.value) })} /></label></div><label>Description<textarea maxLength={1500} rows={2} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
       {resources.map((resource, index) => <div className="lesson-resource-input" key={index}><label>Resource type<select value={resource.type} onChange={(event) => setResources((current) => current.map((item, i) => i === index ? { ...item, type: event.target.value } : item))}><option value="video">Video</option><option value="pdf">PDF</option><option value="note">Notes</option><option value="link">Link</option></select></label><label>Resource name<input maxLength={100} value={resource.title} onChange={(event) => setResources((current) => current.map((item, i) => i === index ? { ...item, title: event.target.value } : item))} /></label><label>HTTPS resource URL<input type="url" pattern="https://.+" value={resource.url} onChange={(event) => setResources((current) => current.map((item, i) => i === index ? { ...item, url: event.target.value } : item))} /></label>{resources.length > 1 && <button className="icon-button" type="button" aria-label="Remove resource" onClick={() => setResources((current) => current.filter((_, i) => i !== index))}><X size={15} /></button>}</div>)}
