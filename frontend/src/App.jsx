@@ -232,7 +232,7 @@ function Courses({ data, setPage, user, openCourse }) {
     <div className="learning-grid">{data.courses.map((course, i) => <article className={`learning-card ${course.color}`} key={course.id}><div className="learning-card-art"><span className="card-art-orbit" /><span className="card-art-symbol">{['✳', '◒', '✺'][i % 3]}</span><small>0{i + 1} / COURSE</small></div><div className="learning-card-body"><Badge tone="soft">{course.track}</Badge><h2>{course.title}</h2><p>{COURSE_DETAILS[course.id]?.description || 'Explore this learning path, work through practical activities, and track your progress.'}</p><div className="course-meta"><span><Clock3 size={14} /> {course.duration}</span><span><Users size={14} /> Cohort 08</span></div><div className="learning-progress"><div><span>{student ? 'Your progress' : 'Course progress'}</span><b>{course.progress}%</b></div><ProgressBar value={course.progress} color={course.color} /></div><button className="button-dark full-width" onClick={() => student ? openCourse(course.id) : setPage('tasks')}>{student ? 'Start learning' : 'View learner work'} <ArrowRight size={15} /></button></div></article>)}</div>
     <div className="empty-hint"><Sparkles size={16} /> Good work takes time. New learning paths will appear here as your campus grows.</div></div>;
 }
-function CourseMaterials({ data, user, notify, initialCourseId }) {
+function CourseMaterials({ data, user, notify, initialCourseId, refresh }) {
   const [courseId, setCourseId] = useState(initialCourseId || data.courses[0]?.id || '');
   const [items, setItems] = useState([]);
   const [learners, setLearners] = useState([]);
@@ -306,7 +306,7 @@ function CourseMaterials({ data, user, notify, initialCourseId }) {
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
   async function completeLesson(lesson) {
-    try { await api(`/lessons/${lesson.id}/complete`, { method: 'POST' }); await load(); notify('Lesson marked complete.'); }
+    try { await api(`/lessons/${lesson.id}/complete`, { method: 'POST' }); await Promise.all([load(), refresh()]); notify('Lesson marked complete.'); }
     catch (e) { notify(e.message); }
   }
   async function assignTask(event) {
@@ -1093,7 +1093,7 @@ export default function App() {
     case 'tutorials': content = <Tutorials user={user} />; break;
     case 'live-courses': content = <LiveCourses user={user} notify={notify} />; break;
     case 'courses': content = <Courses data={data} setPage={setPage} user={user} openCourse={openCourse} />; break;
-    case 'lessons': content = <CourseMaterials data={data} user={user} notify={notify} initialCourseId={learningCourseId} />; break;
+    case 'lessons': content = <CourseMaterials data={data} user={user} notify={notify} initialCourseId={learningCourseId} refresh={refresh} />; break;
     case 'exams': content = <Exams data={data} user={user} notify={notify} />; break;
     case 'levels': content = <LearningLevels setPage={setPage} />; break;
     case 'internships': content = user.role === 'trainer' ? <div className="page-content"><Heading eyebrow="INTERNSHIP PREPARATION" title="Internship readiness." description="Review learner skills and resumes, schedule mock interviews, and recommend eligible students to the placement team." /><InternshipReadiness data={data} user={user} notify={notify} /></div> : <Internships data={data} user={user} notify={notify} />; break;
