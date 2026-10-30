@@ -138,6 +138,47 @@ kbd { display: flex; align-items: center; gap: 2px; padding: 2px 4px; border: 1p
 .week-dots .done { color: #607d67; border-color: #e3eee5; background: #eaf2eb; }
 .week-dots .today { color: white; border-color: #75627f; background: #75627f; }
 .content-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr); gap: 14px; }
+.student-dashboard-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.student-dashboard-grid > .panel { min-width: 0; padding: 16px; }
+.today-schedule { grid-column: span 5; }
+.pending-work-card { grid-column: span 3; }
+.readiness-card { grid-column: span 4; }
+.recommended-card { grid-column: span 5; }
+.learning-streak-card { grid-column: span 3; }
+.dashboard-quick-actions { grid-column: span 4; }
+.dashboard-big-number { display: block; margin: 12px 0 2px; color: #f4f7fb; font-family: var(--serif); font-size: 38px; font-weight: 500; }
+.pending-work-card p, .readiness-card p { min-height: 32px; color: #aab7c6; font-size: 10px; line-height: 1.6; }
+.dashboard-event { width: 100%; display: grid; grid-template-columns: 68px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 10px 0; color: #dfe7f2; border: 0; border-top: 1px solid #303d4d; background: transparent; text-align: left; cursor: pointer; }
+.dashboard-event-time { color: #cfaa7a; font-size: 9px; font-weight: 700; }
+.dashboard-event span:nth-child(2), .recommended-internship span { display: grid; min-width: 0; }
+.dashboard-event b, .recommended-internship b { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-event small, .recommended-internship small { margin-top: 3px; color: #8fa0b4; font-size: 9px; }
+.readiness-score-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 12px; }
+.readiness-score-row strong { color: #f4f7fb; font-family: var(--serif); font-size: 34px; font-weight: 500; }
+.readiness-score-row strong small { font-family: inherit; font-size: 13px; }
+.recommended-internship { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 9px 0; color: #dfe7f2; border: 0; border-top: 1px solid #303d4d; background: transparent; text-align: left; cursor: pointer; }
+.learning-streak-card { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-content: start; gap: 10px; }
+.streak-icon { display: grid; width: 42px; height: 42px; place-items: center; color: #ffd1a6; border-radius: 50%; background: #704c31; font-size: 20px; }
+.learning-streak-card strong { display: block; margin-top: 4px; color: #f4f7fb; font-family: var(--serif); font-size: 26px; font-weight: 500; }
+.learning-streak-card small { display: block; margin-top: 5px; color: #aab7c6; font-size: 9px; line-height: 1.5; }
+.streak-days { grid-column: 1 / -1; display: flex; gap: 6px; margin-top: 7px; }
+.streak-days span { display: grid; width: 25px; height: 25px; place-items: center; color: #8fa0b4; border: 1px solid #344254; border-radius: 50%; font-size: 8px; }
+.streak-days span.done { color: #fff; border-color: #c78950; background: #9a663d; }
+.dashboard-quick-actions { display: grid; align-content: start; gap: 12px; }
+.dashboard-quick-actions > div:nth-child(2) { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.dashboard-quick-actions h2 { margin: 3px 0 0; font-size: 14px; }
+.dashboard-quick-actions button { justify-content: center; }
+.notification-summary { display: flex; align-items: center; justify-content: center; gap: 7px; color: #ffd1a6 !important; border: 0; background: transparent !important; font-size: 9px; cursor: pointer; }
+.dashboard-empty { display: flex; align-items: center; gap: 9px; min-height: 74px; color: #8fa0b4; font-size: 9px; }
+
+@media (max-width: 900px) {
+  .today-schedule, .pending-work-card, .readiness-card, .recommended-card, .learning-streak-card, .dashboard-quick-actions { grid-column: span 6; }
+}
+
+@media (max-width: 640px) {
+  .today-schedule, .pending-work-card, .readiness-card, .recommended-card, .learning-streak-card, .dashboard-quick-actions { grid-column: 1 / -1; }
+  .dashboard-quick-actions > div:nth-child(2) { grid-template-columns: 1fr; }
+}
 .courses-panel, .tasks-panel { padding: 16px 17px 12px; }
 .course-list { margin: 8px 0 5px; }
 .course-row { display: flex; align-items: center; gap: 11px; width: 100%; padding: 11px 0; border: 0; border-bottom: 1px solid #f0f0eb; background: transparent; text-align: left; }
