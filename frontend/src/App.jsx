@@ -1,12 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import Tutorials from './Tutorials.jsx';
 import ApiManagement from './ApiManagement.jsx';
+import Events from './Events.jsx';
+import LostFound from './LostFound.jsx';
+import Marketplace from './Marketplace.jsx';
+import StudyGroups from './StudyGroups.jsx';
+import Clubs from './Clubs.jsx';
+import StudentDirectory from './StudentDirectory.jsx';
+import CampusMap from './CampusMap.jsx';
+import RoomBooking from './RoomBooking.jsx';
+const LibraryCatalog = lazy(() => import('./LibraryCatalog.jsx'));
+const LibrarySeatBooking = lazy(() => import('./LibrarySeatBooking.jsx'));
+const CourseReviews = lazy(() => import('./CourseReviews.jsx'));
+const TransportUpdates = lazy(() => import('./TransportUpdates.jsx'));
+const CanteenMenu = lazy(() => import('./CanteenMenu.jsx'));
 import { apiUrl } from './api-base.js';
 import {
-  Activity, ArrowRight, ArrowUpRight, Award, Bell, BookOpen, BriefcaseBusiness, CalendarDays, Check, CheckCircle2, Copy,
+  Activity, ArrowRight, ArrowUpRight, Award, Bell, BookOpen, BriefcaseBusiness, Bus, CalendarDays, Check, CheckCircle2, Copy,
   ChevronDown, CircleHelp, Clock3, Command, Download, FileCheck2, FileText, GraduationCap,
-  KeyRound, LayoutDashboard, LifeBuoy, LogOut, Menu, MessageCircle, MoreHorizontal, Play, Plus, Radio, Search,
-  Send, ShieldCheck, Sparkles, Upload, Users, X
+  KeyRound, LayoutDashboard, LifeBuoy, LogOut, MapPin, Menu, MessageCircle, MoreHorizontal, Play, Plus, Radio, Search,
+  Send, ShieldCheck, Sparkles, Star, Upload, Users, Utensils, X
 } from 'lucide-react';
 
 const ROLE = { student: 'Candidate', trainer: 'Trainer', coordinator: 'Coordinator', admin: 'Administrator' };
@@ -25,11 +38,11 @@ const COURSE_DETAILS = {
   }
 };
 const NAV = [
-  ['overview', 'Overview', LayoutDashboard], ['tutorials', 'Tutorials', BookOpen], ['live-courses', 'Live courses', Radio], ['courses', 'My learning', BookOpen],
+  ['overview', 'Overview', LayoutDashboard], ['tutorials', 'Tutorials', BookOpen], ['library-catalog', 'Library catalogue', BookOpen], ['library-seats', 'Library seat booking', CalendarDays], ['course-reviews', 'Course reviews', Star], ['live-courses', 'Live courses', Radio], ['courses', 'My learning', BookOpen],
   ['lessons', 'Lessons & resources', FileText], ['exams', 'Weekly exams', FileCheck2], ['levels', 'Learning levels', Activity], ['internships', 'Internships', BriefcaseBusiness],
-  ['attendance', 'Schedule & attendance', CalendarDays], ['tasks', 'Tasks & feedback', FileCheck2],
-  ['progress', 'Progress & certificates', Activity], ['notifications', 'Notifications', Bell], ['announcements', 'Announcements', Bell],
-  ['services', 'Campus services', Sparkles], ['support', 'Help & support', LifeBuoy]
+  ['attendance', 'Schedule & attendance', CalendarDays], ['events', 'Campus events', CalendarDays], ['lost-found', 'Lost & Found', Search], ['marketplace', 'Student marketplace', BriefcaseBusiness], ['study-groups', 'Study groups', Users], ['tasks', 'Tasks & feedback', FileCheck2],
+  ['progress', 'Progress & certificates', Activity], ['notifications', 'Notifications', Bell], ['announcements', 'Announcements', Bell], ['clubs', 'Club directory', Users], ['student-directory', 'Student directory', Users],
+  ['campus-map', 'Campus map', MapPin], ['room-booking', 'Room & lab booking', CalendarDays], ['transport-updates', 'Campus transport', Bus], ['canteen-menu', 'Canteen menu', Utensils], ['services', 'Campus services', Sparkles], ['support', 'Help & support', LifeBuoy]
 ];
 const NAV_BY_ROLE = {
   student: NAV.map(([id, label, Icon]) => [id, id === 'tasks' ? 'Assignments' : label, Icon]),
@@ -740,7 +753,49 @@ function LearningLevels({ setPage }) {
     </section>)}{courses.length === 0 && !error && <div className="panel empty-state"><Activity size={22} /><b>No course levels yet</b><span>Weekly learning levels appear after your trainer publishes an exam.</span></div>}</div>
   </div>;
 }
-function Notifications({ notify }) {
+function BrowserNotificationWatcher({ enabled, onNewNotification, notify }) {
+  const knownIds = useRef(null);
+  useEffect(() => {
+    if (!enabled || !('Notification' in window) || Notification.permission !== 'granted') return undefined;
+    let active = true;
+    async function checkForNotifications() {
+      try {
+        const items = await api('/notifications');
+        if (!active) return;
+        if (knownIds.current === null) {
+          knownIds.current = new Set(items.map((item) => item.id));
+          return;
+        }
+        const fresh = items.filter((item) => !knownIds.current.has(item.id));
+        for (const item of fresh) {
+          knownIds.current.add(item.id);
+          if (!item.read_at) {
+            const alert = new Notification(item.title, {
+              body: item.message,
+              icon: '/zyngram-logo.svg',
+              tag: `campus-${item.id}`
+            });
+            alert.onclick = () => {
+              window.focus();
+              onNewNotification();
+              alert.close();
+            };
+          }
+        }
+      } catch (error) {
+        if (active) notify(`Could not check for new notifications: ${error.message}`);
+      }
+    }
+    checkForNotifications();
+    const timer = window.setInterval(checkForNotifications, 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [enabled, notify, onNewNotification]);
+  return null;
+}
+function Notifications({ notify, browserAlertsEnabled, onToggleBrowserAlerts }) {
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
   const load = useCallback(() => api('/notifications').then(setItems), []);
@@ -749,8 +804,10 @@ function Notifications({ notify }) {
     try { await api(`/notifications/${item.id}/read`, { method: 'PATCH' }); await load(); }
     catch (e) { notify(e.message); }
   }
+  const browserAlertsAvailable = 'Notification' in window;
   return <div className="page-content"><Heading eyebrow="CAMPUS ACTIVITY" title="Notifications." description="Exam reminders and results, internship applications, and status updates." />
     {error && <p className="error-message" role="alert">{error}</p>}
+    <section className="panel browser-alert-settings"><span className="notification-mark"><Bell size={17} /></span><div><b>Browser alerts</b><small>{browserAlertsAvailable ? 'Get a browser notification when a new campus update arrives. Keep Campus Hub open to receive alerts.' : 'Browser notifications are not supported in this browser.'}</small></div><button className={browserAlertsEnabled ? 'button-secondary' : 'button-dark'} disabled={!browserAlertsAvailable} onClick={onToggleBrowserAlerts}>{browserAlertsEnabled ? 'Turn off' : 'Enable alerts'}</button></section>
     <div className="panel notification-list">{items.map((item) => <article className={`notification-row ${item.read_at ? '' : 'unread'}`} key={item.id}><span className="notification-mark">{item.type.startsWith('exam') ? <FileCheck2 size={17} /> : <BriefcaseBusiness size={17} />}</span><span><b>{item.title}</b><small>{item.message}</small><small>{new Date(item.created_at).toLocaleString('en-IN')}</small></span>{!item.read_at && <button className="button-secondary small" onClick={() => markRead(item)}>Mark read</button>}</article>)}{items.length === 0 && <div className="empty-state"><Bell size={22} /><b>You’re all caught up</b><span>New reminders and application updates will appear here.</span></div>}</div>
   </div>;
 }
@@ -812,9 +869,9 @@ function Announcements({ initial, user, notify, courses }) {
   </div>;
 }
 function Services({ setPage }) {
-  const services = [[GraduationCap, 'Career studio', 'Portfolio reviews, interview practice, and thoughtful next steps.', 'CAREER READINESS', 'lilac-bg'], [Users, 'Alumni circle', 'Meet people who have been where you are — and keep in touch.', 'COMMUNITY', 'peach-bg'], [CalendarDays, 'Campus events', 'Showcases, open studios, guest talks, and other good things.', 'ON CAMPUS', 'mint-bg'], [CircleHelp, 'Learner support', 'Find a real person to help with access, schedules, or wellbeing.', 'HERE FOR YOU', 'yellow-bg']];
-  const destinations = ['internships', 'announcements', 'announcements', 'support'];
-  const labels = ['Career studio', 'Alumni circle', 'Campus events', 'Learner support'];
+  const services = [[GraduationCap, 'Career studio', 'Portfolio reviews, interview practice, and thoughtful next steps.', 'CAREER READINESS', 'lilac-bg'], [Users, 'Alumni circle', 'Meet people who have been where you are — and keep in touch.', 'COMMUNITY', 'peach-bg'], [CalendarDays, 'Campus events', 'Showcases, open studios, guest talks, and other good things.', 'ON CAMPUS', 'mint-bg'], [Search, 'Lost & Found', 'Report missing items and help return found belongings to their owners.', 'AROUND CAMPUS', 'yellow-bg'], [BriefcaseBusiness, 'Student marketplace', 'Buy and sell useful items with your campus community.', 'BUY & SELL', 'peach-bg'], [Users, 'Club directory', 'Discover student clubs, their interests, and meeting times.', 'GET INVOLVED', 'lilac-bg'], [MapPin, 'Campus map', 'Find classrooms, facilities, and campus services.', 'FIND YOUR WAY', 'mint-bg'], [CalendarDays, 'Room & lab booking', 'Reserve rooms and labs for study or project work.', 'STUDY SPACES', 'mint-bg'], [BookOpen, 'Library catalogue', 'Search books, subjects, and available copies in the campus library.', 'READ & RESEARCH', 'lilac-bg'], [CalendarDays, 'Library seat booking', 'Reserve a quiet or collaborative study desk by the hour.', 'STUDY SPACES', 'peach-bg'], [Star, 'Course reviews', 'Rate courses and read anonymous student feedback.', 'LEARNER VOICES', 'yellow-bg'], [Bus, 'Campus transport', 'Check shuttle schedules and service announcements.', 'GETTING AROUND', 'mint-bg'], [Utensils, 'Canteen menu', 'Check daily meals, prices, and vegetarian options.', 'FOOD & DRINK', 'peach-bg'], [CircleHelp, 'Learner support', 'Find a real person to help with access, schedules, or wellbeing.', 'HERE FOR YOU', 'yellow-bg']];
+  const destinations = ['internships', 'announcements', 'events', 'lost-found', 'marketplace', 'clubs', 'campus-map', 'room-booking', 'library-catalog', 'library-seats', 'course-reviews', 'transport-updates', 'canteen-menu', 'support'];
+  const labels = ['Career studio', 'Alumni circle', 'Campus events', 'Lost & Found', 'Student marketplace', 'Club directory', 'Campus map', 'Room & lab booking', 'Library catalogue', 'Library seat booking', 'Course reviews', 'Campus transport', 'Canteen menu', 'Learner support'];
   return <div className="page-content"><Heading eyebrow="THE PEOPLE & PLACES AROUND YOU" title="More than a classroom." description="A few more doors to open as you find your way around campus." /><div className="service-grid">{services.map(([Icon, title, text, tag, color], index) => <article className="panel service-card" key={title}><span className={`service-icon ${color}`}><Icon size={21} /></span><p className="eyebrow">{tag}</p><h2>{title}</h2><p>{text}</p><button className="text-link" aria-label={`Explore ${labels[index]}`} onClick={() => setPage(destinations[index])}>Explore <ArrowRight size={14} /></button></article>)}</div><div className="services-note"><span>✳</span><p><b>Zyngram services, thoughtfully connected.</b><br />Career studio opens internships and readiness tools. Campus community opens announcements and campus updates.</p><ArrowUpRight size={17} /></div></div>;
 }
 function Support({ user, notify }) {
@@ -1062,8 +1119,26 @@ export default function App() {
   const [learningCourseId, setLearningCourseId] = useState('');
   const [loading, setLoading] = useState(true); const [loadError, setLoadError] = useState(''); const [mobileOpen, setMobileOpen] = useState(false); const [toast, setToast] = useState('');
   const [inviteToken, setInviteToken] = useState(() => new URLSearchParams(window.location.search).get('invite'));
+  const [browserAlertsEnabled, setBrowserAlertsEnabled] = useState(false);
   const notify = useCallback((message) => { setToast(message); window.setTimeout(() => setToast(''), 3600); }, []);
+  const openNotifications = useCallback(() => setPage('notifications'), []);
   const refresh = useCallback(async () => { const dashboard = await api('/dashboard'); setUser(dashboard.user); setData(dashboard); }, []);
+  useEffect(() => {
+    if (!user) {
+      setBrowserAlertsEnabled(false);
+      return;
+    }
+    try {
+      setBrowserAlertsEnabled(
+        window.localStorage.getItem(`campus-browser-alerts:${user.id}`) === 'enabled'
+        && 'Notification' in window
+        && Notification.permission === 'granted'
+      );
+    } catch (error) {
+      setBrowserAlertsEnabled(false);
+      notify(`Could not load browser alert settings: ${error.message}`);
+    }
+  }, [notify, user?.id]);
   useEffect(() => {
     api('/auth/session')
       .then(({ user: activeUser }) => activeUser ? refresh() : null)
@@ -1082,6 +1157,34 @@ export default function App() {
     else await api('/auth/login', { method: 'POST', body: JSON.stringify(credentials) });
     await refresh();
   }
+  async function toggleBrowserAlerts() {
+    if (browserAlertsEnabled) {
+      try {
+        window.localStorage.removeItem(`campus-browser-alerts:${user.id}`);
+        setBrowserAlertsEnabled(false);
+        notify('Browser alerts turned off.');
+      } catch (error) {
+        notify(`Could not update browser alert settings: ${error.message}`);
+      }
+      return;
+    }
+    if (!('Notification' in window)) {
+      notify('This browser does not support browser notifications.');
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        notify(permission === 'denied' ? 'Allow notifications in your browser settings to enable alerts.' : 'Browser alert permission was not granted.');
+        return;
+      }
+      window.localStorage.setItem(`campus-browser-alerts:${user.id}`, 'enabled');
+      setBrowserAlertsEnabled(true);
+      notify('Browser alerts enabled. They appear while Campus Hub is open.');
+    } catch (error) {
+      notify(`Could not enable browser alerts: ${error.message}`);
+    }
+  }
   async function signOut() { try { await api('/auth/logout', { method: 'POST' }); setUser(null); setData(null); setPage('overview'); } catch (e) { notify(e.message); } }
   function openCourse(courseId) { setLearningCourseId(courseId); setPage('lessons'); }
   if (inviteToken) return <AcceptInvitation token={inviteToken} onComplete={finishInvitation} />;
@@ -1097,8 +1200,21 @@ export default function App() {
     case 'exams': content = <Exams data={data} user={user} notify={notify} />; break;
     case 'levels': content = <LearningLevels setPage={setPage} />; break;
     case 'internships': content = user.role === 'trainer' ? <div className="page-content"><Heading eyebrow="INTERNSHIP PREPARATION" title="Internship readiness." description="Review learner skills and resumes, schedule mock interviews, and recommend eligible students to the placement team." /><InternshipReadiness data={data} user={user} notify={notify} /></div> : <Internships data={data} user={user} notify={notify} />; break;
-    case 'notifications': content = <Notifications notify={notify} />; break;
+    case 'notifications': content = <Notifications notify={notify} browserAlertsEnabled={browserAlertsEnabled} onToggleBrowserAlerts={toggleBrowserAlerts} />; break;
     case 'attendance': content = <Attendance data={data} user={user} notify={notify} reload={refresh} />; break;
+    case 'events': content = <Events user={user} notify={notify} />; break;
+    case 'lost-found': content = <LostFound user={user} notify={notify} />; break;
+    case 'marketplace': content = <Marketplace user={user} notify={notify} />; break;
+    case 'study-groups': content = <StudyGroups user={user} notify={notify} />; break;
+    case 'clubs': content = <Clubs user={user} notify={notify} />; break;
+    case 'student-directory': content = user.role === 'student' ? <StudentDirectory user={user} notify={notify} /> : <Overview data={data} user={user} setPage={setPage} openCourse={openCourse} />; break;
+    case 'campus-map': content = <CampusMap />; break;
+    case 'room-booking': content = <RoomBooking user={user} notify={notify} />; break;
+    case 'library-catalog': content = <Suspense fallback={<div className="events-empty"><BookOpen size={20} /><p>Opening library catalogue…</p></div>}><LibraryCatalog /></Suspense>; break;
+    case 'library-seats': content = <Suspense fallback={<div className="events-empty"><BookOpen size={20} /><p>Opening seat booking…</p></div>}><LibrarySeatBooking user={user} notify={notify} /></Suspense>; break;
+    case 'course-reviews': content = <Suspense fallback={<div className="events-empty"><BookOpen size={20} /><p>Opening course reviews…</p></div>}><CourseReviews user={user} notify={notify} /></Suspense>; break;
+    case 'transport-updates': content = <Suspense fallback={<div className="events-empty"><Bus size={20} /><p>Opening campus transport…</p></div>}><TransportUpdates user={user} notify={notify} /></Suspense>; break;
+    case 'canteen-menu': content = <Suspense fallback={<div className="events-empty"><Utensils size={20} /><p>Opening canteen menu…</p></div>}><CanteenMenu /></Suspense>; break;
     case 'tasks': content = <Tasks tasks={Array.isArray(data.tasks) ? data.tasks : []} user={user} reload={refresh} notify={notify} />; break;
     case 'progress': content = user.role === 'student' ? <Progress data={data} setPage={setPage} /> : <StaffProgress user={user} />; break;
     case 'announcements': content = <Announcements initial={data.announcements} user={user} notify={notify} courses={data.courses} />; break;
@@ -1113,5 +1229,5 @@ export default function App() {
       ? <AdminOverview data={data} user={user} setPage={setPage} />
       : <Overview data={data} user={user} setPage={setPage} openCourse={openCourse} />;
   }
-  return <div className="app-shell"><Sidebar page={page} setPage={setPage} user={user} data={data} logout={signOut} mobileOpen={mobileOpen} closeMobile={() => setMobileOpen(false)} /><div className="main-area"><Header page={page} user={user} setPage={setPage} onMobile={() => setMobileOpen(true)} onSignOut={signOut} /><main key={page} className="main-scroll">{content}</main></div>{toast && <div className="toast" role="status"><CheckCircle2 size={17} />{toast}<button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={15} /></button></div>}</div>;
+  return <div className="app-shell"><BrowserNotificationWatcher enabled={browserAlertsEnabled} onNewNotification={openNotifications} notify={notify} /><Sidebar page={page} setPage={setPage} user={user} data={data} logout={signOut} mobileOpen={mobileOpen} closeMobile={() => setMobileOpen(false)} /><div className="main-area"><Header page={page} user={user} setPage={setPage} onMobile={() => setMobileOpen(true)} onSignOut={signOut} /><main key={page} className="main-scroll">{content}</main></div>{toast && <div className="toast" role="status"><CheckCircle2 size={17} />{toast}<button aria-label="Dismiss notification" onClick={() => setToast('')}><X size={15} /></button></div>}</div>;
 }

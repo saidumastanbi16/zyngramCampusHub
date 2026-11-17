@@ -142,6 +142,21 @@ Connect to the restore-test cluster with `mongosh`, verify that the restored dat
 - Four distinct portal entry points; each opens a role-labelled sign-in screen. Credential sign-in checks the selected portal, email or student ZIN ID, and salted password hash.
 - Development-only sample access makes it possible to demonstrate every role without distributing credentials.
 - Role-aware dashboard, courses, schedule and attendance, learner tasks and feedback, progress and certificates, announcements, campus services, support, and profile.
+- Campus events calendar with staff event creation, upcoming/past filters, student RSVPs, attendee counts, and in-app reminders within 24 hours of an event.
+- Lost & Found board with item search, lost/found reports, open/resolved filters, and owner-restricted status updates.
+- Student marketplace with item descriptions, INR pricing, condition and pickup location, search, and seller-restricted sold status.
+- Study groups with student creation and joining, member-only discussions, and group message history.
+- Searchable campus club directory with categories, descriptions, meeting schedules, and contact links; listed clubs are illustrative prototype data.
+- Online club membership applications with student status tracking and coordinator/admin review.
+- Student directory with opt-in visibility; only opted-in students' names and cohorts are shared with other students.
+- Campus map with searchable facilities, clickable location markers, opening hours, and accessibility details; map points are illustrative prototype data.
+- Room and lab booking with hourly availability, duplicate-booking protection, and owner/staff cancellation.
+- Searchable library catalogue with subject filters, shelf locations, and copy availability; catalogue records are illustrative prototype data.
+- Library seat booking with hourly availability, duplicate-reservation protection, and owner/staff cancellation.
+- Course reviews with 1–5 star ratings, anonymous comments, and one editable review per student and course.
+- Campus transport page with illustrative shuttle routes and timetables, plus coordinator/admin service notices; it is not connected to live vehicle tracking.
+- Canteen menu with weekday meals, vegetarian labels, serving times, prices, and search; menu data is illustrative and not live availability.
+- Optional browser alerts for new campus notifications while the app is open. Browser permission is opt-in and saved per user on that device; this prototype does not deliver alerts while the app is closed.
 - Student self-registration generates a unique ZIN ID and saves a pending request with a salted password hash; it does not create a login account. Only an admin can approve or reject the request. Approval activates the student's account and credentials; only then can the student sign in with their ZIN ID or generated Zyngram email. Configure the admin recipient and SMTP sender in `.env` to receive request notifications.
 - Trainer course-material learner pickers show every student account, whether or not the learner already has course tasks. Newly approved student registrations appear automatically; assigning a task links the selected student to that course.
 - Role-specific navigation: students see personal learning and certificates, trainers get assigned learner submissions/progress, coordinators get campus monitoring and publishing, and administrators get user management, reports, and the activity log.

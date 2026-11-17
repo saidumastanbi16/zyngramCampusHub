@@ -34,9 +34,15 @@ const studentReadiness = db.collection('student_readiness');
 const mockInterviews = db.collection('mock_interviews');
 const attendance = db.collection('attendance');
 const announcements = db.collection('announcements');
+const events = db.collection('events');
+const lostFoundItems = db.collection('lost_found_items');
+const marketplaceListings = db.collection('marketplace_listings');
+const studyGroups = db.collection('study_groups');
+const studyGroupMessages = db.collection('study_group_messages');
 const auditLog = db.collection('audit_log');
 const supportTickets = db.collection('support_tickets');
 const studentRegistrationRequests = db.collection('student_registration_requests');
+const clubMembershipRequests = db.collection('club_membership_requests');
 const exams = db.collection('exams');
 const examAttempts = db.collection('exam_attempts');
 const courseCertificates = db.collection('course_certificates');
@@ -51,8 +57,113 @@ const studentResumeFiles = db.collection('student_resume_files');
 const appSettings = db.collection('app_settings');
 const resumeUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 const lessonUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
+await notifications.createIndex(
+  { user_id: 1, dedupe_key: 1 },
+  { unique: true, partialFilterExpression: { dedupe_key: { $type: 'string' } } }
+);
+await clubMembershipRequests.createIndex({ club_id: 1, applicant_id: 1 }, { unique: true });
 const defaultExamPassMark = 70;
 const roles = ['student', 'trainer', 'coordinator', 'admin'];
+const campusClubs = [
+  { id: 'club-coding', name: 'Coding Society', category: 'Technology', description: 'Build projects, practice programming, and learn from other developers.', meeting_day: 'Wednesdays · 4:00 PM', location: 'Innovation Lab', member_count: 28, contact_email: 'coding.club@example.test' },
+  { id: 'club-robotics', name: 'Robotics Club', category: 'Technology', description: 'Explore robotics, electronics, and hands-on engineering challenges.', meeting_day: 'Fridays · 3:30 PM', location: 'Engineering Workshop', member_count: 19, contact_email: 'robotics.club@example.test' },
+  { id: 'club-literary', name: 'Literary Circle', category: 'Arts & culture', description: 'Share stories, discuss books, and experiment with creative writing.', meeting_day: 'Tuesdays · 4:00 PM', location: 'Library Seminar Room', member_count: 16, contact_email: 'literary.club@example.test' },
+  { id: 'club-arts', name: 'Arts & Culture Collective', category: 'Arts & culture', description: 'Celebrate campus creativity through music, art, and cultural events.', meeting_day: 'Thursdays · 4:30 PM', location: 'Student Activity Hall', member_count: 24, contact_email: 'arts.club@example.test' },
+  { id: 'club-green', name: 'Green Campus', category: 'Community', description: 'Bring students together for sustainability projects and campus clean-ups.', meeting_day: 'Mondays · 3:30 PM', location: 'Campus Garden', member_count: 21, contact_email: 'green.club@example.test' },
+  { id: 'club-entrepreneurs', name: 'Entrepreneurship Cell', category: 'Career & business', description: 'Explore startup ideas, business skills, and student-led ventures.', meeting_day: 'Saturdays · 11:00 AM', location: 'Learning Hub, Room 2', member_count: 18, contact_email: 'ecell@example.test' }
+];
+const campusMapLocations = [
+  { id: 'loc-academic', name: 'Academic Block', category: 'Academic', description: 'Classrooms, teaching spaces, and the campus administration office.', hours: 'Monday–Saturday · 8:00 AM–6:00 PM', accessibility: 'Step-free main entrance and lift access.', icon: 'Academic', x: 28, y: 29 },
+  { id: 'loc-library', name: 'Campus Library', category: 'Library', description: 'Books, quiet study areas, and research support.', hours: 'Monday–Saturday · 8:30 AM–8:00 PM', accessibility: 'Accessible entrance and ground-floor study area.', icon: 'Library', x: 63, y: 30 },
+  { id: 'loc-dining', name: 'Campus Dining Hall', category: 'Dining', description: 'Canteen and shared seating for students and staff.', hours: 'Monday–Saturday · 8:00 AM–5:00 PM', accessibility: 'Step-free entrance.', icon: 'Dining', x: 41, y: 68 },
+  { id: 'loc-transit', name: 'Main Gate & Bus Stop', category: 'Transit', description: 'Main campus entrance and designated campus bus pickup point.', hours: 'Campus access · 7:00 AM–8:00 PM', accessibility: 'Accessible drop-off area at the gate.', icon: 'Transit', x: 17, y: 81 },
+  { id: 'loc-wellness', name: 'Student Wellness Center', category: 'Wellness', description: 'First-aid desk and private student support room.', hours: 'Monday–Friday · 9:00 AM–5:00 PM', accessibility: 'Ground floor; ask reception for assistance.', icon: 'Wellness', x: 19, y: 49 },
+  { id: 'loc-cafe', name: 'Learning Hub Café', category: 'Cafe', description: 'Coffee, light refreshments, and informal study seating.', hours: 'Monday–Saturday · 9:00 AM–6:00 PM', accessibility: 'Step-free entrance and accessible seating.', icon: 'Cafe', x: 75, y: 58 }
+];
+const libraryCatalog = [
+  { id: 'book-web-foundations', title: 'Foundations of Web Development', author: 'Mira Sen', category: 'Technology', isbn: '978-1-55555-010-1', shelf: 'Technology · T-12', total_copies: 4, available_copies: 3 },
+  { id: 'book-ui-design', title: 'Practical Interface Design', author: 'Rohan Mehta', category: 'Design', isbn: '978-1-55555-010-2', shelf: 'Design · D-04', total_copies: 3, available_copies: 1 },
+  { id: 'book-data-thinking', title: 'Data Thinking for Beginners', author: 'Anika Rao', category: 'Technology', isbn: '978-1-55555-010-3', shelf: 'Technology · T-18', total_copies: 3, available_copies: 0 },
+  { id: 'book-business-basics', title: 'Business and Finance Essentials', author: 'Dev Patel', category: 'Business', isbn: '978-1-55555-010-4', shelf: 'Business · B-09', total_copies: 2, available_copies: 2 },
+  { id: 'book-writing', title: 'Clear Writing for Research', author: 'Leela Das', category: 'Research', isbn: '978-1-55555-010-5', shelf: 'Research · R-03', total_copies: 2, available_copies: 1 },
+  { id: 'book-marketing', title: 'The Student Guide to Digital Marketing', author: 'Kabir Shah', category: 'Business', isbn: '978-1-55555-010-6', shelf: 'Business · B-15', total_copies: 3, available_copies: 2 },
+  { id: 'book-robotics', title: 'Robotics: A Hands-on Introduction', author: 'Tara Iyer', category: 'Engineering', isbn: '978-1-55555-010-7', shelf: 'Engineering · E-07', total_copies: 2, available_copies: 1 },
+  { id: 'book-learning', title: 'Learning Skills for University', author: 'Nikhil Kumar', category: 'Study skills', isbn: '978-1-55555-010-8', shelf: 'Study skills · S-02', total_copies: 3, available_copies: 3 }
+];
+const roomBookings = db.collection('room_bookings');
+await roomBookings.createIndex(
+  { room_id: 1, date: 1, slot: 1 },
+  { unique: true, partialFilterExpression: { status: 'booked' } }
+);
+const bookableRooms = [
+  { id: 'innovation-lab', name: 'Innovation Lab', type: 'Lab' },
+  { id: 'computer-lab', name: 'Computer Lab', type: 'Lab' },
+  { id: 'seminar-room-a', name: 'Seminar Room A', type: 'Study room' },
+  { id: 'seminar-room-b', name: 'Seminar Room B', type: 'Study room' },
+  { id: 'project-room', name: 'Project Room', type: 'Study room' }
+];
+const librarySeatBookings = db.collection('library_seat_bookings');
+await librarySeatBookings.createIndex(
+  { seat_id: 1, date: 1, slot: 1 },
+  { unique: true, partialFilterExpression: { status: 'booked' } }
+);
+const bookableLibrarySeats = [
+  ...Array.from({ length: 6 }, (_, index) => {
+    const number = String(index + 1).padStart(2, '0');
+    return { id: `quiet-${number}`, name: `Quiet desk ${number}`, zone: 'Quiet study' };
+  }),
+  ...Array.from({ length: 6 }, (_, index) => {
+    const number = String(index + 1).padStart(2, '0');
+    return { id: `group-${number}`, name: `Study desk ${number}`, zone: 'Collaborative study' };
+  })
+];
+const courseReviews = db.collection('course_reviews');
+await courseReviews.createIndex({ course_id: 1, user_id: 1 }, { unique: true });
+const transportUpdates = db.collection('transport_updates');
+await transportUpdates.createIndex({ status: 1, created_at: -1 });
+const campusTransportRoutes = [
+  { id: 'north-route', code: 'NORTH', name: 'North Gate Shuttle', description: 'Connects the north residential area with the campus.', service_days: 'Monday–Saturday', frequency: 'Every 30 minutes', stops: [{ name: 'North Gate', time: '07:30' }, { name: 'Student Housing', time: '07:40' }, { name: 'Main Campus Gate', time: '08:00' }, { name: 'Library', time: '08:08' }] },
+  { id: 'east-route', code: 'EAST', name: 'East District Shuttle', description: 'A direct connection from the east transit stop to campus.', service_days: 'Monday–Saturday', frequency: 'Every 45 minutes', stops: [{ name: 'East Transit Stop', time: '07:35' }, { name: 'Community Centre', time: '07:48' }, { name: 'Main Campus Gate', time: '08:05' }, { name: 'Academic Block', time: '08:12' }] },
+  { id: 'campus-loop', code: 'LOOP', name: 'Campus Loop', description: 'An accessible loop between key campus facilities.', service_days: 'Monday–Saturday', frequency: 'Every 20 minutes', stops: [{ name: 'Main Campus Gate', time: '08:00' }, { name: 'Academic Block', time: '08:06' }, { name: 'Campus Library', time: '08:12' }, { name: 'Dining Hall', time: '08:18' }] }
+];
+const canteenMenuByDay = {
+  Monday: [
+    { id: 'mon-breakfast', category: 'Breakfast', name: 'Idli with sambar', description: 'Steamed idli served with sambar and coconut chutney.', price: 45, vegetarian: true, serving_time: '8:00–10:30 AM', available: true },
+    { id: 'mon-lunch', category: 'Lunch', name: 'Vegetable thali', description: 'Seasonal vegetables, dal, rice, roti, and curd.', price: 95, vegetarian: true, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'mon-special', category: 'Lunch special', name: 'Chicken rice bowl', description: 'Spiced chicken with rice and fresh salad.', price: 125, vegetarian: false, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'mon-snack', category: 'Snacks', name: 'Masala dosa', description: 'Crisp dosa with potato masala and chutneys.', price: 65, vegetarian: true, serving_time: '3:00–5:00 PM', available: true }
+  ],
+  Tuesday: [
+    { id: 'tue-breakfast', category: 'Breakfast', name: 'Poha with peanuts', description: 'Light flattened rice with curry leaves and peanuts.', price: 40, vegetarian: true, serving_time: '8:00–10:30 AM', available: true },
+    { id: 'tue-lunch', category: 'Lunch', name: 'Paneer pulao', description: 'Mildly spiced rice with paneer and cucumber raita.', price: 100, vegetarian: true, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'tue-special', category: 'Lunch special', name: 'Egg curry meal', description: 'Egg curry with steamed rice and seasonal vegetables.', price: 105, vegetarian: false, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'tue-snack', category: 'Snacks', name: 'Vegetable sandwich', description: 'Toasted sandwich with vegetables and mint chutney.', price: 55, vegetarian: true, serving_time: '3:00–5:00 PM', available: true }
+  ],
+  Wednesday: [
+    { id: 'wed-breakfast', category: 'Breakfast', name: 'Upma with chutney', description: 'Warm semolina upma with vegetables and chutney.', price: 40, vegetarian: true, serving_time: '8:00–10:30 AM', available: true },
+    { id: 'wed-lunch', category: 'Lunch', name: 'Dal khichdi', description: 'Rice and lentils cooked with mild spices, served with curd.', price: 80, vegetarian: true, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'wed-special', category: 'Lunch special', name: 'Grilled chicken wrap', description: 'Grilled chicken, vegetables, and mint yogurt dressing.', price: 115, vegetarian: false, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'wed-snack', category: 'Snacks', name: 'Samosa and chai', description: 'Two vegetable samosas with a cup of tea.', price: 45, vegetarian: true, serving_time: '3:00–5:00 PM', available: true }
+  ],
+  Thursday: [
+    { id: 'thu-breakfast', category: 'Breakfast', name: 'Pongal with chutney', description: 'Rice and lentil pongal with pepper and curry leaves.', price: 45, vegetarian: true, serving_time: '8:00–10:30 AM', available: true },
+    { id: 'thu-lunch', category: 'Lunch', name: 'Chole with rice', description: 'Chickpea curry with rice, salad, and pickle.', price: 85, vegetarian: true, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'thu-special', category: 'Lunch special', name: 'Fish curry meal', description: 'Fish curry with rice and a seasonal side.', price: 135, vegetarian: false, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'thu-snack', category: 'Snacks', name: 'Fruit and yogurt cup', description: 'Seasonal fruit with plain yogurt.', price: 50, vegetarian: true, serving_time: '3:00–5:00 PM', available: true }
+  ],
+  Friday: [
+    { id: 'fri-breakfast', category: 'Breakfast', name: 'Masala omelette toast', description: 'Two-egg vegetable omelette with toasted bread.', price: 60, vegetarian: false, serving_time: '8:00–10:30 AM', available: true },
+    { id: 'fri-lunch', category: 'Lunch', name: 'Vegetable biryani', description: 'Fragrant rice with vegetables, raita, and salan.', price: 95, vegetarian: true, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'fri-special', category: 'Lunch special', name: 'Paneer wrap', description: 'Spiced paneer and vegetables in a soft flatbread.', price: 90, vegetarian: true, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'fri-snack', category: 'Snacks', name: 'Corn chaat', description: 'Sweet corn with lime, herbs, and mild spices.', price: 45, vegetarian: true, serving_time: '3:00–5:00 PM', available: true }
+  ],
+  Saturday: [
+    { id: 'sat-breakfast', category: 'Breakfast', name: 'Aloo paratha with curd', description: 'Potato-stuffed paratha served with curd and pickle.', price: 60, vegetarian: true, serving_time: '8:00–10:30 AM', available: true },
+    { id: 'sat-lunch', category: 'Lunch', name: 'Rajma rice', description: 'Kidney bean curry with steamed rice and salad.', price: 85, vegetarian: true, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'sat-special', category: 'Lunch special', name: 'Chicken biryani', description: 'Chicken biryani with raita and a boiled egg.', price: 130, vegetarian: false, serving_time: '12:00–2:30 PM', available: true },
+    { id: 'sat-snack', category: 'Snacks', name: 'Paneer roll', description: 'Paneer and vegetables wrapped in a toasted flatbread.', price: 70, vegetarian: true, serving_time: '3:00–5:00 PM', available: true }
+  ]
+};
 
 app.disable('x-powered-by');
 app.use(express.json({ limit: '32kb' }));
@@ -224,6 +335,29 @@ export async function runUpcomingExamReminders(now = new Date()) {
       `exam-reminder:${exam._id}`
     )));
     await exams.updateOne({ _id: exam._id, reminder_sent_at: { $exists: false } }, { $set: { reminder_sent_at: now.toISOString() } });
+  }
+}
+export async function runUpcomingEventReminders(now = new Date()) {
+  const start = now.toISOString();
+  const cutoff = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const upcoming = await events.find({
+    starts_at: { $gt: start, $lte: cutoff },
+    attendee_ids: { $exists: true, $ne: [] }
+  }).toArray();
+  for (const event of upcoming) {
+    const alreadyReminded = new Set(event.reminder_user_ids || []);
+    const attendeeIds = (event.attendee_ids || []).filter((id) => !alreadyReminded.has(id));
+    await Promise.all(attendeeIds.map((userId) => createNotification(
+      userId,
+      'event_reminder',
+      'Campus event reminder',
+      `${event.title} starts ${new Date(event.starts_at).toLocaleString('en-IN')} at ${event.location}.`,
+      event._id,
+      `event-reminder:${event._id}:${userId}`
+    )));
+    if (attendeeIds.length) {
+      await events.updateOne({ _id: event._id }, { $addToSet: { reminder_user_ids: { $each: attendeeIds } } });
+    }
   }
 }
 async function addCourseNames(records) {
@@ -1468,6 +1602,604 @@ app.get('/api/announcements', requireUser, async (req, res) => {
   }
   res.json((await announcements.find(filter).sort({ published_at: -1 }).toArray()).map(toApiDocument));
 });
+app.get('/api/clubs', requireUser, async (_req, res) => {
+  const clubs = await Promise.all(campusClubs.map(async (club) => ({
+    ...club,
+    member_count: club.member_count + await clubMembershipRequests.countDocuments({ club_id: club.id, status: 'approved' })
+  })));
+  res.json(clubs);
+});
+app.get('/api/campus-map', requireUser, (_req, res) => res.json(campusMapLocations));
+app.get('/api/library-catalog', requireUser, (req, res) => {
+  const parsed = z.object({ q: z.string().trim().max(100).default('') }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: 'Search text must be 100 characters or fewer.' });
+  const query = parsed.data.q.toLowerCase();
+  const results = query
+    ? libraryCatalog.filter((book) => `${book.title} ${book.author} ${book.category} ${book.isbn}`.toLowerCase().includes(query))
+    : libraryCatalog;
+  res.json(results);
+});
+app.get('/api/course-reviews', requireUser, async (req, res) => {
+  const courseFilter = req.user.role === 'trainer' ? { trainer_id: req.user._id } : {};
+  const courseRows = await courses.find(courseFilter).sort({ title: 1 }).limit(200).toArray();
+  const courseIds = courseRows.map((course) => course._id);
+  if (!courseIds.length) return res.json([]);
+  const reviews = await courseReviews.find({ course_id: { $in: courseIds } })
+    .sort({ updated_at: -1 }).limit(1000).toArray();
+  const reviewsByCourse = new Map();
+  for (const review of reviews) {
+    const list = reviewsByCourse.get(review.course_id) || [];
+    list.push(review);
+    reviewsByCourse.set(review.course_id, list);
+  }
+  res.json(courseRows.map((course) => {
+    const courseReviewRows = reviewsByCourse.get(course._id) || [];
+    const myReview = courseReviewRows.find((review) => review.user_id === req.user._id);
+    const average = courseReviewRows.length
+      ? courseReviewRows.reduce((total, review) => total + review.rating, 0) / courseReviewRows.length
+      : 0;
+    return {
+      id: course._id,
+      title: course.title,
+      average_rating: average,
+      review_count: courseReviewRows.length,
+      my_review: myReview ? { rating: myReview.rating, comment: myReview.comment } : null,
+      reviews: courseReviewRows.slice(0, 20).map((review) => ({
+        id: review._id,
+        rating: review.rating,
+        comment: review.comment,
+        updated_at: review.updated_at,
+        from_me: review.user_id === req.user._id
+      }))
+    };
+  }));
+});
+app.get('/api/transport/updates', requireUser, async (_req, res) => {
+  const updates = await transportUpdates.find({ status: 'active' }).sort({ created_at: -1 }).limit(100).toArray();
+  const routeNames = new Map(campusTransportRoutes.map((route) => [route.id, route.name]));
+  res.json({
+    routes: campusTransportRoutes,
+    updates: updates.map((update) => {
+      const { created_by, ...fields } = update;
+      return { ...toApiDocument(fields), route_name: routeNames.get(update.route_id) || 'All routes' };
+    })
+  });
+});
+app.get('/api/canteen/menu', requireUser, (req, res) => {
+  const parsed = z.object({ day: z.enum(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']) }).safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose a menu day from Monday to Saturday.' });
+  res.json({
+    day: parsed.data.day,
+    hours: 'Monday–Saturday · 8:00 AM–5:00 PM',
+    meals: canteenMenuByDay[parsed.data.day]
+  });
+});
+app.post('/api/transport/updates', requireUser, requireRoles('coordinator', 'admin'), async (req, res) => {
+  const parsed = z.object({
+    routeId: z.string().trim().min(1).max(40),
+    type: z.enum(['delay', 'cancellation', 'information']),
+    message: z.string().trim().min(5).max(300)
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose a route and update type, and enter a message between 5 and 300 characters.' });
+  if (parsed.data.routeId !== 'all' && !campusTransportRoutes.some((route) => route.id === parsed.data.routeId)) {
+    return res.status(400).json({ error: 'Choose a valid campus shuttle route.' });
+  }
+  const update = {
+    _id: `transport-update-${crypto.randomUUID()}`,
+    route_id: parsed.data.routeId === 'all' ? null : parsed.data.routeId,
+    type: parsed.data.type,
+    message: parsed.data.message,
+    status: 'active',
+    created_by: req.user._id,
+    created_at: new Date().toISOString()
+  };
+  await transportUpdates.insertOne(update);
+  await recordAudit(req.user._id, 'transport_update.create', 'transport_update', update._id);
+  const { created_by, ...fields } = update;
+  const routeName = campusTransportRoutes.find((route) => route.id === update.route_id)?.name || 'All routes';
+  res.status(201).json({ ...toApiDocument(fields), route_name: routeName });
+});
+app.patch('/api/transport/updates/:id', requireUser, requireRoles('coordinator', 'admin'), async (req, res) => {
+  const parsed = z.object({ status: z.literal('resolved') }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose resolved to close this transport notice.' });
+  const update = await transportUpdates.findOne({ _id: req.params.id, status: 'active' });
+  if (!update) return res.status(404).json({ error: 'Active transport update not found.' });
+  const result = await transportUpdates.updateOne({ _id: update._id, status: 'active' }, {
+    $set: { status: 'resolved', resolved_by: req.user._id, resolved_at: new Date().toISOString() }
+  });
+  if (!result.matchedCount) return res.status(409).json({ error: 'This transport update was already resolved.' });
+  await recordAudit(req.user._id, 'transport_update.resolve', 'transport_update', update._id);
+  res.json({ id: update._id, status: 'resolved' });
+});
+app.post('/api/course-reviews', requireUser, requireRoles('student'), async (req, res) => {
+  const parsed = z.object({
+    courseId: z.string().trim().min(1).max(100),
+    rating: z.number().int().min(1).max(5),
+    comment: z.string().trim().min(10).max(1000)
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose a 1–5 star rating and enter a comment between 10 and 1,000 characters.' });
+  const course = await courses.findOne({ _id: parsed.data.courseId });
+  if (!course) return res.status(404).json({ error: 'Course not found.' });
+  const now = new Date().toISOString();
+  await courseReviews.updateOne(
+    { course_id: course._id, user_id: req.user._id },
+    { $set: { rating: parsed.data.rating, comment: parsed.data.comment, updated_at: now }, $setOnInsert: { _id: `course-review-${crypto.randomUUID()}`, created_at: now } },
+    { upsert: true }
+  );
+  const review = await courseReviews.findOne({ course_id: course._id, user_id: req.user._id });
+  await recordAudit(req.user._id, 'course_review.save', 'course', course._id);
+  res.status(200).json({ id: review._id, rating: review.rating, comment: review.comment, updated_at: review.updated_at });
+});
+app.get('/api/room-bookings', requireUser, async (req, res) => {
+  const parsed = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).safeParse(req.query);
+  if (!parsed.success || !isCalendarDate(parsed.data?.date || '')) {
+    return res.status(400).json({ error: 'Choose a valid date to view room availability.' });
+  }
+  const bookings = await roomBookings.find({ date: parsed.data.date, status: 'booked' }).sort({ slot: 1 }).limit(100).toArray();
+  res.json(bookings.map((booking) => {
+    const { user_id, ...fields } = booking;
+    return { ...toApiDocument(fields), created_by_me: user_id === req.user._id };
+  }));
+});
+app.post('/api/room-bookings', requireUser, async (req, res) => {
+  const parsed = z.object({
+    roomId: z.string().min(1),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    slot: z.string().regex(/^(0[8-9]|1[0-9]):00$/),
+    purpose: z.string().trim().min(3).max(120)
+  }).safeParse(req.body);
+  if (!parsed.success || !isCalendarDate(parsed.data?.date || '')) {
+    return res.status(400).json({ error: 'Choose a room, a valid date and hourly slot, and enter a short purpose.' });
+  }
+  const room = bookableRooms.find((item) => item.id === parsed.data.roomId);
+  if (!room) return res.status(400).json({ error: 'Choose a valid campus room or lab.' });
+  const campusStart = new Date(`${parsed.data.date}T${parsed.data.slot}:00+05:30`);
+  const campusEnd = new Date(campusStart.getTime() + 60 * 60 * 1000);
+  const campusToday = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+  const maxDate = new Date(`${campusToday}T00:00:00.000Z`);
+  maxDate.setUTCDate(maxDate.getUTCDate() + 30);
+  const requestedDay = new Date(`${parsed.data.date}T12:00:00.000Z`);
+  if (requestedDay.getUTCDay() === 0 || campusStart <= new Date() || parsed.data.date > maxDate.toISOString().slice(0, 10)) {
+    return res.status(400).json({ error: 'Bookings must be for a future Monday–Saturday slot within the next 30 days.' });
+  }
+  const booking = {
+    _id: `room-${crypto.randomUUID()}`,
+    room_id: room.id,
+    room_name: room.name,
+    date: parsed.data.date,
+    slot: parsed.data.slot,
+    ends_slot: `${String(Number(parsed.data.slot.slice(0, 2)) + 1).padStart(2, '0')}:00`,
+    starts_at: campusStart.toISOString(),
+    ends_at: campusEnd.toISOString(),
+    purpose: parsed.data.purpose,
+    user_id: req.user._id,
+    status: 'booked',
+    created_at: new Date().toISOString()
+  };
+  try {
+    await roomBookings.insertOne(booking);
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: 'That room and time slot was just booked. Choose another available slot.' });
+    throw error;
+  }
+  await recordAudit(req.user._id, 'room_booking.create', 'room_booking', booking._id);
+  const { user_id, ...fields } = booking;
+  res.status(201).json({ ...toApiDocument(fields), created_by_me: true });
+});
+app.delete('/api/room-bookings/:id', requireUser, async (req, res) => {
+  const booking = await roomBookings.findOne({ _id: req.params.id, status: 'booked' });
+  if (!booking) return res.status(404).json({ error: 'Active room booking not found.' });
+  if (booking.user_id !== req.user._id && !['coordinator', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Only the person who booked this room or campus staff can cancel it.' });
+  }
+  const cancelled = await roomBookings.updateOne({ _id: booking._id, status: 'booked' }, {
+    $set: { status: 'cancelled', cancelled_at: new Date().toISOString(), cancelled_by: req.user._id }
+  });
+  if (!cancelled.matchedCount) return res.status(409).json({ error: 'This booking was already cancelled.' });
+  await recordAudit(req.user._id, 'room_booking.cancel', 'room_booking', booking._id);
+  res.json({ ok: true });
+});
+app.get('/api/library-seat-bookings', requireUser, async (req, res) => {
+  const parsed = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).safeParse(req.query);
+  if (!parsed.success || !isCalendarDate(parsed.data?.date || '')) {
+    return res.status(400).json({ error: 'Choose a valid date to view library seat availability.' });
+  }
+  const bookings = await librarySeatBookings.find({ date: parsed.data.date, status: 'booked' }).sort({ slot: 1 }).limit(100).toArray();
+  res.json(bookings.map((booking) => {
+    const { user_id, ...fields } = booking;
+    return { ...toApiDocument(fields), created_by_me: user_id === req.user._id };
+  }));
+});
+app.post('/api/library-seat-bookings', requireUser, requireRoles('student'), async (req, res) => {
+  const parsed = z.object({
+    seatId: z.string().min(1),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    slot: z.string().regex(/^(0[8-9]|1[0-9]):00$/)
+  }).safeParse(req.body);
+  if (!parsed.success || !isCalendarDate(parsed.data?.date || '')) {
+    return res.status(400).json({ error: 'Choose a valid library seat, date, and hourly slot.' });
+  }
+  const seat = bookableLibrarySeats.find((item) => item.id === parsed.data.seatId);
+  if (!seat) return res.status(400).json({ error: 'Choose a valid library seat.' });
+  const campusStart = new Date(`${parsed.data.date}T${parsed.data.slot}:00+05:30`);
+  const campusEnd = new Date(campusStart.getTime() + 60 * 60 * 1000);
+  const campusToday = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+  const maxDate = new Date(`${campusToday}T00:00:00.000Z`);
+  maxDate.setUTCDate(maxDate.getUTCDate() + 30);
+  const requestedDay = new Date(`${parsed.data.date}T12:00:00.000Z`);
+  if (requestedDay.getUTCDay() === 0 || campusStart <= new Date() || parsed.data.date > maxDate.toISOString().slice(0, 10)) {
+    return res.status(400).json({ error: 'Bookings must be for a future Monday–Saturday slot within the next 30 days.' });
+  }
+  const booking = {
+    _id: `library-seat-${crypto.randomUUID()}`,
+    seat_id: seat.id,
+    seat_name: seat.name,
+    date: parsed.data.date,
+    slot: parsed.data.slot,
+    ends_slot: `${String(Number(parsed.data.slot.slice(0, 2)) + 1).padStart(2, '0')}:00`,
+    starts_at: campusStart.toISOString(),
+    ends_at: campusEnd.toISOString(),
+    user_id: req.user._id,
+    status: 'booked',
+    created_at: new Date().toISOString()
+  };
+  try {
+    await librarySeatBookings.insertOne(booking);
+  } catch (error) {
+    if (error.code === 11000) return res.status(409).json({ error: 'That library seat was just booked. Choose another available seat or time.' });
+    throw error;
+  }
+  await recordAudit(req.user._id, 'library_seat_booking.create', 'library_seat_booking', booking._id);
+  const { user_id, ...fields } = booking;
+  res.status(201).json({ ...toApiDocument(fields), created_by_me: true });
+});
+app.delete('/api/library-seat-bookings/:id', requireUser, async (req, res) => {
+  const booking = await librarySeatBookings.findOne({ _id: req.params.id, status: 'booked' });
+  if (!booking) return res.status(404).json({ error: 'Active library seat booking not found.' });
+  if (booking.user_id !== req.user._id && !['coordinator', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Only the person who booked this seat or campus staff can cancel it.' });
+  }
+  const cancelled = await librarySeatBookings.updateOne({ _id: booking._id, status: 'booked' }, {
+    $set: { status: 'cancelled', cancelled_at: new Date().toISOString(), cancelled_by: req.user._id }
+  });
+  if (!cancelled.matchedCount) return res.status(409).json({ error: 'This library seat booking was already cancelled.' });
+  await recordAudit(req.user._id, 'library_seat_booking.cancel', 'library_seat_booking', booking._id);
+  res.json({ ok: true });
+});
+app.get('/api/student-directory', requireUser, requireRoles('student'), async (req, res) => {
+  const students = await users.find(
+    { role: 'student', student_directory_visible: true, _id: { $ne: req.user._id } },
+    { projection: { name: 1, cohort: 1, avatar: 1 } }
+  ).sort({ name: 1 }).limit(200).toArray();
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({
+    visible: req.user.student_directory_visible === true,
+    students: students.map((student) => ({
+      id: String(student._id),
+      name: student.name,
+      cohort: student.cohort || 'Campus student',
+      avatar: student.avatar || ''
+    }))
+  });
+});
+app.patch('/api/student-directory/visibility', requireUser, requireRoles('student'), async (req, res) => {
+  const parsed = z.object({ visible: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose whether your student directory profile should be visible.' });
+  await users.updateOne({ _id: req.user._id, role: 'student' }, { $set: { student_directory_visible: parsed.data.visible } });
+  await recordAudit(req.user._id, parsed.data.visible ? 'student_directory.opt_in' : 'student_directory.opt_out', 'student_profile', req.user._id);
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ visible: parsed.data.visible });
+});
+app.get('/api/club-memberships', requireUser, async (req, res) => {
+  if (!['student', 'coordinator', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'You do not have permission to review club membership applications.' });
+  const filter = req.user.role === 'student' ? { applicant_id: req.user._id } : {};
+  const applications = await clubMembershipRequests.find(filter).sort({ created_at: -1 }).limit(200).toArray();
+  const applicantIds = [...new Set(applications.map((application) => application.applicant_id))];
+  const applicants = req.user.role === 'student' ? [] : await users.find({ _id: { $in: applicantIds } }, { projection: { name: 1 } }).toArray();
+  const applicantNames = new Map(applicants.map((applicant) => [applicant._id, applicant.name]));
+  res.json(applications.map((application) => {
+    const { applicant_id, reviewed_by, ...fields } = application;
+    return {
+      ...toApiDocument(fields),
+      ...(req.user.role === 'student' ? {} : { applicant_name: applicantNames.get(applicant_id) || 'Student', applicant_id })
+    };
+  }));
+});
+app.post('/api/clubs/:clubId/membership', requireUser, requireRoles('student'), async (req, res) => {
+  const parsed = z.object({ motivation: z.string().trim().min(10).max(500) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Explain why you would like to join in 10 to 500 characters.' });
+  const club = campusClubs.find((item) => item.id === req.params.clubId);
+  if (!club) return res.status(404).json({ error: 'Campus club not found.' });
+  const existing = await clubMembershipRequests.findOne({ club_id: club.id, applicant_id: req.user._id });
+  if (existing && existing.status !== 'declined') return res.status(409).json({ error: `Your application is already ${existing.status}.` });
+  const now = new Date().toISOString();
+  if (existing) {
+    await clubMembershipRequests.updateOne({ _id: existing._id, status: 'declined' }, {
+      $set: { motivation: parsed.data.motivation, status: 'pending', created_at: now, updated_at: now },
+      $unset: { reviewed_by: '', reviewed_at: '' }
+    });
+  } else {
+    try {
+      await clubMembershipRequests.insertOne({
+        _id: `club-application-${crypto.randomUUID()}`,
+        club_id: club.id,
+        club_name: club.name,
+        applicant_id: req.user._id,
+        motivation: parsed.data.motivation,
+        status: 'pending',
+        created_at: now,
+        updated_at: now
+      });
+    } catch (error) {
+      if (error.code === 11000) return res.status(409).json({ error: 'You already have an application for this club.' });
+      throw error;
+    }
+  }
+  const application = await clubMembershipRequests.findOne({ club_id: club.id, applicant_id: req.user._id });
+  await recordAudit(req.user._id, 'club_membership.apply', 'club_membership_request', application._id);
+  const { applicant_id, ...fields } = application;
+  res.status(201).json(toApiDocument(fields));
+});
+app.patch('/api/club-memberships/:id', requireUser, requireRoles('coordinator', 'admin'), async (req, res) => {
+  const parsed = z.object({ status: z.enum(['approved', 'declined']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose approved or declined for this application.' });
+  const application = await clubMembershipRequests.findOne({ _id: req.params.id });
+  if (!application) return res.status(404).json({ error: 'Club membership application not found.' });
+  if (application.status !== 'pending') return res.status(409).json({ error: 'This application has already been reviewed.' });
+  const now = new Date().toISOString();
+  const update = await clubMembershipRequests.updateOne({ _id: application._id, status: 'pending' }, {
+    $set: { status: parsed.data.status, reviewed_by: req.user._id, reviewed_at: now, updated_at: now }
+  });
+  if (!update.matchedCount) return res.status(409).json({ error: 'This application has already been reviewed.' });
+  const updated = await clubMembershipRequests.findOne({ _id: application._id });
+  await createNotification(application.applicant_id, 'club_membership', 'Club application updated', `Your application to join ${application.club_name} was ${parsed.data.status}.`, application._id);
+  await recordAudit(req.user._id, `club_membership.${parsed.data.status}`, 'club_membership_request', application._id);
+  const applicant = await users.findOne({ _id: application.applicant_id }, { projection: { name: 1 } });
+  const { applicant_id, ...fields } = updated;
+  res.json({ ...toApiDocument(fields), applicant_name: applicant?.name || 'Student', applicant_id });
+});
+app.get('/api/events', requireUser, async (req, res) => {
+  const rows = await events.find({}).sort({ starts_at: 1 }).toArray();
+  res.json(rows.map((event) => {
+    const { attendee_ids = [], reminder_user_ids, ...fields } = event;
+    return {
+      ...toApiDocument(fields),
+      attendance_count: attendee_ids.length,
+      is_attending: attendee_ids.includes(req.user._id)
+    };
+  }));
+});
+app.post('/api/events', requireUser, requireRoles('trainer', 'coordinator', 'admin'), async (req, res) => {
+  const parsed = z.object({
+    title: z.string().trim().min(3).max(120),
+    description: z.string().trim().max(2000).default(''),
+    location: z.string().trim().min(2).max(120),
+    startsAt: z.string().datetime(),
+    endsAt: z.string().datetime()
+  }).safeParse(req.body);
+  const startsAt = parsed.success ? new Date(parsed.data.startsAt) : null;
+  const endsAt = parsed.success ? new Date(parsed.data.endsAt) : null;
+  if (!parsed.success || !startsAt || !endsAt || startsAt <= new Date() || endsAt <= startsAt) {
+    return res.status(400).json({ error: 'Enter an event name, location, a future start time, and an end time after it starts.' });
+  }
+  const event = {
+    _id: `evt-${crypto.randomUUID()}`,
+    title: parsed.data.title,
+    description: parsed.data.description,
+    location: parsed.data.location,
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+    attendee_ids: [],
+    reminder_user_ids: [],
+    created_by: req.user._id,
+    created_at: new Date().toISOString()
+  };
+  await events.insertOne(event);
+  await recordAudit(req.user._id, 'event.create', 'event', event._id);
+  const { attendee_ids, reminder_user_ids, ...publicEvent } = event;
+  res.status(201).json({ ...toApiDocument(publicEvent), attendance_count: 0, is_attending: false });
+});
+app.post('/api/events/:id/rsvp', requireUser, requireRoles('student'), async (req, res) => {
+  const parsed = z.object({ attending: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose whether you are attending this event.' });
+  const event = await events.findOne({ _id: req.params.id });
+  if (!event) return res.status(404).json({ error: 'Campus event not found.' });
+  if (new Date(event.ends_at) <= new Date()) return res.status(400).json({ error: 'RSVP is closed because this event has ended.' });
+  await events.updateOne(
+    { _id: event._id },
+    parsed.data.attending
+      ? { $addToSet: { attendee_ids: req.user._id } }
+      : { $pull: { attendee_ids: req.user._id } }
+  );
+  const updated = await events.findOne({ _id: event._id });
+  await recordAudit(req.user._id, parsed.data.attending ? 'event.rsvp' : 'event.cancel_rsvp', 'event', event._id);
+  const { attendee_ids = [], reminder_user_ids, ...fields } = updated;
+  res.json({
+    ...toApiDocument(fields),
+    attendance_count: attendee_ids.length,
+    is_attending: attendee_ids.includes(req.user._id)
+  });
+});
+app.get('/api/lost-found', requireUser, async (req, res) => {
+  const reports = await lostFoundItems.find({}).sort({ created_at: -1 }).limit(200).toArray();
+  res.json(reports.map((report) => {
+    const { reporter_id, ...fields } = report;
+    return { ...toApiDocument(fields), created_by_me: reporter_id === req.user._id };
+  }));
+});
+app.post('/api/lost-found', requireUser, async (req, res) => {
+  const parsed = z.object({
+    itemType: z.enum(['lost', 'found']),
+    title: z.string().trim().min(2).max(100),
+    category: z.string().trim().min(2).max(50),
+    description: z.string().trim().min(5).max(1000),
+    location: z.string().trim().min(2).max(120),
+    reportedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+  }).safeParse(req.body);
+  if (!parsed.success || !isCalendarDate(parsed.data?.reportedOn || '') || parsed.data.reportedOn > new Date().toISOString().slice(0, 10)) {
+    return res.status(400).json({ error: 'Enter valid item details, a location, and a date no later than today.' });
+  }
+  const report = {
+    _id: `lf-${crypto.randomUUID()}`,
+    item_type: parsed.data.itemType,
+    title: parsed.data.title,
+    category: parsed.data.category,
+    description: parsed.data.description,
+    location: parsed.data.location,
+    reported_on: parsed.data.reportedOn,
+    status: 'open',
+    reporter_id: req.user._id,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+  await lostFoundItems.insertOne(report);
+  await recordAudit(req.user._id, 'lost_found.create', 'lost_found_item', report._id);
+  const { reporter_id, ...publicReport } = report;
+  res.status(201).json({ ...toApiDocument(publicReport), created_by_me: true });
+});
+app.patch('/api/lost-found/:id/status', requireUser, async (req, res) => {
+  const parsed = z.object({ status: z.enum(['open', 'resolved']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose a valid Lost & Found report status.' });
+  const report = await lostFoundItems.findOne({ _id: req.params.id });
+  if (!report) return res.status(404).json({ error: 'Lost & Found report not found.' });
+  if (report.reporter_id !== req.user._id && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only the person who posted this report or an administrator can change its status.' });
+  }
+  await lostFoundItems.updateOne({ _id: report._id }, { $set: { status: parsed.data.status, updated_at: new Date().toISOString() } });
+  await recordAudit(req.user._id, `lost_found.${parsed.data.status}`, 'lost_found_item', report._id);
+  const updated = await lostFoundItems.findOne({ _id: report._id });
+  const { reporter_id, ...publicReport } = updated;
+  res.json({ ...toApiDocument(publicReport), created_by_me: reporter_id === req.user._id });
+});
+app.get('/api/marketplace', requireUser, async (req, res) => {
+  const listings = await marketplaceListings.find({}).sort({ created_at: -1 }).limit(200).toArray();
+  res.json(listings.map((listing) => {
+    const { seller_id, ...fields } = listing;
+    return { ...toApiDocument(fields), created_by_me: seller_id === req.user._id };
+  }));
+});
+app.post('/api/marketplace', requireUser, requireRoles('student'), async (req, res) => {
+  const parsed = z.object({
+    title: z.string().trim().min(2).max(100),
+    category: z.string().trim().min(2).max(50),
+    description: z.string().trim().min(5).max(1000),
+    price: z.number().int().min(1).max(10_000_000),
+    condition: z.enum(['new', 'like_new', 'good', 'fair']),
+    location: z.string().trim().min(2).max(120)
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter valid item details, a price in INR, condition, and pickup location.' });
+  const listing = {
+    _id: `market-${crypto.randomUUID()}`,
+    ...parsed.data,
+    status: 'available',
+    seller_id: req.user._id,
+    seller_name: req.user.name,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+  await marketplaceListings.insertOne(listing);
+  await recordAudit(req.user._id, 'marketplace.create', 'marketplace_listing', listing._id);
+  const { seller_id, ...publicListing } = listing;
+  res.status(201).json({ ...toApiDocument(publicListing), created_by_me: true });
+});
+app.patch('/api/marketplace/:id/status', requireUser, async (req, res) => {
+  const parsed = z.object({ status: z.enum(['available', 'sold']) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Choose a valid marketplace listing status.' });
+  const listing = await marketplaceListings.findOne({ _id: req.params.id });
+  if (!listing) return res.status(404).json({ error: 'Marketplace listing not found.' });
+  if (listing.seller_id !== req.user._id && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Only the seller or an administrator can change this listing status.' });
+  }
+  await marketplaceListings.updateOne({ _id: listing._id }, { $set: { status: parsed.data.status, updated_at: new Date().toISOString() } });
+  await recordAudit(req.user._id, `marketplace.${parsed.data.status}`, 'marketplace_listing', listing._id);
+  const updated = await marketplaceListings.findOne({ _id: listing._id });
+  const { seller_id, ...publicListing } = updated;
+  res.json({ ...toApiDocument(publicListing), created_by_me: seller_id === req.user._id });
+});
+app.get('/api/study-groups', requireUser, async (req, res) => {
+  const groups = await studyGroups.find({}).sort({ created_at: -1 }).limit(200).toArray();
+  res.json(groups.map((group) => {
+    const { member_ids = [], creator_id, ...fields } = group;
+    return {
+      ...toApiDocument(fields),
+      member_count: member_ids.length,
+      is_member: member_ids.includes(req.user._id),
+      created_by_me: creator_id === req.user._id
+    };
+  }));
+});
+app.post('/api/study-groups', requireUser, requireRoles('student'), async (req, res) => {
+  const parsed = z.object({
+    name: z.string().trim().min(3).max(80),
+    subject: z.string().trim().min(2).max(80),
+    description: z.string().trim().min(5).max(500)
+  }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Enter a group name, subject, and description within the stated limits.' });
+  const group = {
+    _id: `study-${crypto.randomUUID()}`,
+    ...parsed.data,
+    creator_id: req.user._id,
+    member_ids: [req.user._id],
+    created_at: new Date().toISOString()
+  };
+  await studyGroups.insertOne(group);
+  await recordAudit(req.user._id, 'study_group.create', 'study_group', group._id);
+  const { creator_id, member_ids, ...publicGroup } = group;
+  res.status(201).json({ ...toApiDocument(publicGroup), member_count: 1, is_member: true, created_by_me: true });
+});
+app.post('/api/study-groups/:id/members', requireUser, requireRoles('student'), async (req, res) => {
+  const group = await studyGroups.findOne({ _id: req.params.id });
+  if (!group) return res.status(404).json({ error: 'Study group not found.' });
+  await studyGroups.updateOne({ _id: group._id }, { $addToSet: { member_ids: req.user._id } });
+  const updated = await studyGroups.findOne({ _id: group._id });
+  await recordAudit(req.user._id, 'study_group.join', 'study_group', group._id);
+  const { creator_id, member_ids = [], ...publicGroup } = updated;
+  res.json({
+    ...toApiDocument(publicGroup),
+    member_count: member_ids.length,
+    is_member: member_ids.includes(req.user._id),
+    created_by_me: creator_id === req.user._id
+  });
+});
+app.get('/api/study-groups/:id/messages', requireUser, requireRoles('student'), async (req, res) => {
+  const group = await studyGroups.findOne({ _id: req.params.id }, { projection: { member_ids: 1 } });
+  if (!group) return res.status(404).json({ error: 'Study group not found.' });
+  if (!group.member_ids?.includes(req.user._id)) return res.status(403).json({ error: 'Join this study group to view its discussion.' });
+  const messages = await studyGroupMessages.find({ group_id: group._id }).sort({ created_at: 1 }).limit(100).toArray();
+  const authorIds = [...new Set(messages.map((entry) => entry.author_id))];
+  const authors = await users.find({ _id: { $in: authorIds } }, { projection: { name: 1 } }).toArray();
+  const authorNames = new Map(authors.map((author) => [author._id, author.name]));
+  res.json(messages.map((entry) => {
+    const { author_id, ...fields } = entry;
+    return {
+      ...toApiDocument(fields),
+      author_name: authorNames.get(author_id) || 'Student',
+      from_me: author_id === req.user._id
+    };
+  }));
+});
+app.post('/api/study-groups/:id/messages', requireUser, requireRoles('student'), async (req, res) => {
+  const parsed = z.object({ message: z.string().trim().min(1).max(2000) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Write a message of up to 2,000 characters.' });
+  const group = await studyGroups.findOne({ _id: req.params.id }, { projection: { _id: 1, member_ids: 1 } });
+  if (!group) return res.status(404).json({ error: 'Study group not found.' });
+  if (!group.member_ids?.includes(req.user._id)) return res.status(403).json({ error: 'Join this study group before posting a message.' });
+  const entry = {
+    _id: `study-message-${crypto.randomUUID()}`,
+    group_id: group._id,
+    author_id: req.user._id,
+    message: parsed.data.message,
+    created_at: new Date().toISOString()
+  };
+  await studyGroupMessages.insertOne(entry);
+  await recordAudit(req.user._id, 'study_group.message', 'study_group', group._id);
+  const { author_id, ...publicMessage } = entry;
+  res.status(201).json({ ...toApiDocument(publicMessage), author_name: req.user.name, from_me: true });
+});
 app.get('/api/support', requireUser, async (req, res) => {
   const filter = req.user.role === 'admin' ? {} : { user_id: req.user._id };
   const tickets = await supportTickets.find(filter).sort({ created_at: -1 }).limit(100).toArray();
@@ -1766,6 +2498,9 @@ if (process.env.NODE_ENV !== 'test') {
   runUpcomingExamReminders().catch((error) => console.error('Exam reminder job failed:', error));
   const reminderTimer = setInterval(() => runUpcomingExamReminders().catch((error) => console.error('Exam reminder job failed:', error)), 15 * 60 * 1000);
   reminderTimer.unref();
+  runUpcomingEventReminders().catch((error) => console.error('Event reminder job failed:', error));
+  const eventReminderTimer = setInterval(() => runUpcomingEventReminders().catch((error) => console.error('Event reminder job failed:', error)), 15 * 60 * 1000);
+  eventReminderTimer.unref();
   app.listen(port, () => console.log(`Campus Hub API listening on http://localhost:${port}`));
 }
 

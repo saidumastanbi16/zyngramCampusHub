@@ -12,7 +12,7 @@ process.env.MAIL_PASSWORD = '';
 process.env.MAIL_FROM = '';
 process.env.ADMIN_NOTIFICATION_EMAIL = '';
 process.env.ADMIN_RECOVERY_TOKEN = 'test-only-admin-recovery-token-with-more-than-32-characters';
-const { app, client, db, runUpcomingExamReminders } = await import('../server/index.js');
+const { app, client, db, runUpcomingExamReminders, runUpcomingEventReminders } = await import('../server/index.js');
 const password = 'sample-access-only-2026';
 
 function passwordHash(value) {
@@ -130,6 +130,7 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
     method: 'POST',
     body: { role: 'student', email: 'aarav.demo@example.test', password }
   });
+
   assert.equal(studentLogin.status, 200);
   assert.match(studentLogin.cookie, /^campus_session=/);
   const studentCookie = studentLogin.cookie;
@@ -788,4 +789,479 @@ test('auth, role boundaries, task feedback, announcement and admin flows', async
   assert.equal((await request('/auth/login', { method: 'POST', body: {
     role: 'admin', email: nextRecoveryBody.newEmail, password: nextRecoveryBody.newPassword
   } })).status, 200);
+});
+
+test('campus event creation and student RSVP respect role and event state', async () => {
+  assert.equal((await request('/events')).status, 401);
+  const staffLogin = await request('/auth/demo', { method: 'POST', body: { role: 'coordinator' } });
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const staffCookie = staffLogin.cookie;
+  const studentCookie = studentLogin.cookie;
+  const startsAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const endsAt = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+  const eventInput = { title: 'Campus makers showcase', description: 'Student projects and demos.', location: 'Innovation Hall', startsAt, endsAt };
+
+  assert.equal((await request('/events', { method: 'POST', cookie: studentCookie, body: eventInput })).status, 403);
+  assert.equal((await request('/events', { method: 'POST', cookie: staffCookie, body: { ...eventInput, endsAt: startsAt } })).status, 400);
+  const created = await request('/events', { method: 'POST', cookie: staffCookie, body: eventInput });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.attendance_count, 0);
+  assert.equal(created.body.is_attending, false);
+
+  const rsvp = await request(`/events/${created.body.id}/rsvp`, {
+    method: 'POST', cookie: studentCookie, body: { attending: true }
+  });
+  assert.equal(rsvp.status, 200);
+  assert.equal(rsvp.body.is_attending, true);
+  assert.equal(rsvp.body.attendance_count, 1);
+  const duplicateRsvp = await request(`/events/${created.body.id}/rsvp`, {
+    method: 'POST', cookie: studentCookie, body: { attending: true }
+  });
+  assert.equal(duplicateRsvp.body.attendance_count, 1);
+  const eventsForStudent = await request('/events', { cookie: studentCookie });
+  assert.equal(eventsForStudent.body.find((event) => event.id === created.body.id).is_attending, true);
+  await runUpcomingEventReminders();
+  const reminders = await request('/notifications', { cookie: studentCookie });
+  assert.equal(reminders.body.filter((notification) => notification.entity_id === created.body.id && notification.type === 'event_reminder').length, 1);
+  await runUpcomingEventReminders();
+  const repeatedReminders = await request('/notifications', { cookie: studentCookie });
+  assert.equal(repeatedReminders.body.filter((notification) => notification.entity_id === created.body.id && notification.type === 'event_reminder').length, 1);
+
+  const cancelled = await request(`/events/${created.body.id}/rsvp`, {
+    method: 'POST', cookie: studentCookie, body: { attending: false }
+  });
+  assert.equal(cancelled.body.is_attending, false);
+  assert.equal(cancelled.body.attendance_count, 0);
+});
+
+test('Lost & Found reports are searchable by authorized users and status is owner-restricted', async () => {
+  assert.equal((await request('/lost-found')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const otherStudentLogin = await request('/auth/login', {
+    method: 'POST', body: { role: 'student', email: 'peer@example.test', password }
+  });
+  const studentCookie = studentLogin.cookie;
+  const otherStudentCookie = otherStudentLogin.cookie;
+  const reportInput = {
+    itemType: 'found',
+    title: 'Blue water bottle',
+    category: 'Drinkware',
+    description: 'Blue metal bottle left near the library entrance.',
+    location: 'Library entrance',
+    reportedOn: new Date().toISOString().slice(0, 10)
+  };
+
+  const invalidDate = await request('/lost-found', {
+    method: 'POST', cookie: studentCookie, body: { ...reportInput, reportedOn: 'not-a-date' }
+  });
+  assert.equal(invalidDate.status, 400);
+  const created = await request('/lost-found', { method: 'POST', cookie: studentCookie, body: reportInput });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.item_type, 'found');
+  assert.equal(created.body.status, 'open');
+  assert.equal(created.body.created_by_me, true);
+  assert.equal('reporter_id' in created.body, false);
+
+  const reportList = await request('/lost-found', { cookie: otherStudentCookie });
+  assert.equal(reportList.status, 200);
+  assert.equal(reportList.body.find((item) => item.id === created.body.id).created_by_me, false);
+  assert.equal((await request(`/lost-found/${created.body.id}/status`, {
+    method: 'PATCH', cookie: otherStudentCookie, body: { status: 'resolved' }
+  })).status, 403);
+  const resolved = await request(`/lost-found/${created.body.id}/status`, {
+    method: 'PATCH', cookie: studentCookie, body: { status: 'resolved' }
+  });
+  assert.equal(resolved.status, 200);
+  assert.equal(resolved.body.status, 'resolved');
+  assert.equal(resolved.body.created_by_me, true);
+});
+
+test('student marketplace validates listings and restricts listing status to its seller', async () => {
+  assert.equal((await request('/marketplace')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const otherStudentLogin = await request('/auth/login', {
+    method: 'POST', body: { role: 'student', email: 'peer@example.test', password }
+  });
+  const trainerLogin = await request('/auth/demo', { method: 'POST', body: { role: 'trainer' } });
+  const studentCookie = studentLogin.cookie;
+  const otherStudentCookie = otherStudentLogin.cookie;
+  const listingInput = {
+    title: 'Used JavaScript textbook',
+    category: 'Books',
+    description: 'Well-kept textbook with a few highlighted pages.',
+    price: 450,
+    condition: 'good',
+    location: 'Main campus library'
+  };
+
+  assert.equal((await request('/marketplace', { method: 'POST', cookie: trainerLogin.cookie, body: listingInput })).status, 403);
+  assert.equal((await request('/marketplace', { method: 'POST', cookie: studentCookie, body: { ...listingInput, price: -1 } })).status, 400);
+  const created = await request('/marketplace', { method: 'POST', cookie: studentCookie, body: listingInput });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.price, 450);
+  assert.equal(created.body.status, 'available');
+  assert.equal(created.body.created_by_me, true);
+  assert.equal('seller_id' in created.body, false);
+
+  const listings = await request('/marketplace', { cookie: otherStudentCookie });
+  assert.equal(listings.status, 200);
+  assert.equal(listings.body.find((item) => item.id === created.body.id).created_by_me, false);
+  assert.equal((await request(`/marketplace/${created.body.id}/status`, {
+    method: 'PATCH', cookie: otherStudentCookie, body: { status: 'sold' }
+  })).status, 403);
+  const sold = await request(`/marketplace/${created.body.id}/status`, {
+    method: 'PATCH', cookie: studentCookie, body: { status: 'sold' }
+  });
+  assert.equal(sold.status, 200);
+  assert.equal(sold.body.status, 'sold');
+  assert.equal(sold.body.created_by_me, true);
+});
+
+test('study groups require membership for private discussions and validate messages', async () => {
+  assert.equal((await request('/study-groups')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const otherStudentLogin = await request('/auth/login', {
+    method: 'POST', body: { role: 'student', email: 'peer@example.test', password }
+  });
+  const trainerLogin = await request('/auth/demo', { method: 'POST', body: { role: 'trainer' } });
+  const studentCookie = studentLogin.cookie;
+  const otherStudentCookie = otherStudentLogin.cookie;
+  const groupInput = {
+    name: 'JavaScript Study Circle',
+    subject: 'JavaScript',
+    description: 'Practice JavaScript fundamentals and review examples together.'
+  };
+
+  assert.equal((await request('/study-groups', { method: 'POST', cookie: trainerLogin.cookie, body: groupInput })).status, 403);
+  assert.equal((await request('/study-groups', { method: 'POST', cookie: studentCookie, body: { ...groupInput, name: 'x' } })).status, 400);
+  const created = await request('/study-groups', { method: 'POST', cookie: studentCookie, body: groupInput });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.member_count, 1);
+  assert.equal(created.body.is_member, true);
+  assert.equal('member_ids' in created.body, false);
+
+  assert.equal((await request(`/study-groups/${created.body.id}/messages`, { cookie: otherStudentCookie })).status, 403);
+  assert.equal((await request(`/study-groups/${created.body.id}/messages`, {
+    method: 'POST', cookie: otherStudentCookie, body: { message: 'Trying to post before joining.' }
+  })).status, 403);
+  const joined = await request(`/study-groups/${created.body.id}/members`, {
+    method: 'POST', cookie: otherStudentCookie, body: {}
+  });
+  assert.equal(joined.status, 200);
+  assert.equal(joined.body.member_count, 2);
+  assert.equal(joined.body.is_member, true);
+  const posted = await request(`/study-groups/${created.body.id}/messages`, {
+    method: 'POST', cookie: otherStudentCookie, body: { message: 'Which topic should we start with?' }
+  });
+  assert.equal(posted.status, 201);
+  assert.equal(posted.body.author_name, 'Sample Peer');
+  assert.equal(posted.body.from_me, true);
+  assert.equal('author_id' in posted.body, false);
+  const messages = await request(`/study-groups/${created.body.id}/messages`, { cookie: studentCookie });
+  assert.equal(messages.status, 200);
+  assert.equal(messages.body.length, 1);
+  assert.equal(messages.body[0].from_me, false);
+});
+
+test('campus club directory requires sign-in and returns searchable club details', async () => {
+  assert.equal((await request('/clubs')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const clubs = await request('/clubs', { cookie: studentLogin.cookie });
+  assert.equal(clubs.status, 200);
+  assert.ok(clubs.body.length >= 5);
+  assert.ok(clubs.body.some((club) => club.category === 'Technology'));
+  assert.ok(clubs.body.every((club) => club.name && club.description && club.meeting_day && club.location));
+});
+
+test('campus map requires sign-in and returns location and accessibility details', async () => {
+  assert.equal((await request('/campus-map')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const locations = await request('/campus-map', { cookie: studentLogin.cookie });
+  assert.equal(locations.status, 200);
+  assert.ok(locations.body.length >= 5);
+  assert.ok(locations.body.every((location) => location.id && location.name && location.category && location.description && location.hours));
+  assert.ok(locations.body.every((location) => location.x >= 0 && location.x <= 100 && location.y >= 0 && location.y <= 100));
+});
+
+test('club membership applications support student status, staff review, and safe resubmission', async () => {
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const peerLogin = await request('/auth/login', { method: 'POST', body: { role: 'student', email: 'peer@example.test', password } });
+  const coordinatorLogin = await request('/auth/demo', { method: 'POST', body: { role: 'coordinator' } });
+  const trainerLogin = await request('/auth/demo', { method: 'POST', body: { role: 'trainer' } });
+  const studentCookie = studentLogin.cookie;
+  const peerCookie = peerLogin.cookie;
+  const coordinatorCookie = coordinatorLogin.cookie;
+  const clubs = await request('/clubs', { cookie: studentCookie });
+  assert.equal(clubs.status, 200);
+  const clubId = clubs.body[0].id;
+
+  assert.equal((await request('/club-memberships')).status, 401);
+  assert.equal((await request('/club-memberships', { cookie: trainerLogin.cookie })).status, 403);
+  assert.equal((await request(`/clubs/${clubId}/membership`, {
+    method: 'POST', cookie: studentCookie, body: { motivation: 'short' }
+  })).status, 400);
+  const application = await request(`/clubs/${clubId}/membership`, {
+    method: 'POST', cookie: studentCookie, body: { motivation: 'I would like to learn and contribute to club activities.' }
+  });
+  assert.equal(application.status, 201);
+  assert.equal(application.body.status, 'pending');
+  assert.equal('applicant_id' in application.body, false);
+  assert.equal((await request(`/clubs/${clubId}/membership`, {
+    method: 'POST', cookie: studentCookie, body: { motivation: 'I want to join this club too.' }
+  })).status, 409);
+
+  const myApplications = await request('/club-memberships', { cookie: studentCookie });
+  assert.equal(myApplications.body[0].id, application.body.id);
+  const staffApplications = await request('/club-memberships', { cookie: coordinatorCookie });
+  assert.equal(typeof staffApplications.body[0].applicant_name, 'string');
+  assert.ok(staffApplications.body[0].applicant_name.length > 0);
+  assert.equal((await request(`/club-memberships/${application.body.id}`, {
+    method: 'PATCH', cookie: trainerLogin.cookie, body: { status: 'approved' }
+  })).status, 403);
+  const reviewed = await request(`/club-memberships/${application.body.id}`, {
+    method: 'PATCH', cookie: coordinatorCookie, body: { status: 'approved' }
+  });
+  assert.equal(reviewed.status, 200);
+  assert.equal(reviewed.body.status, 'approved');
+  assert.equal((await request(`/club-memberships/${application.body.id}`, {
+    method: 'PATCH', cookie: coordinatorCookie, body: { status: 'declined' }
+  })).status, 409);
+  assert.equal((await request('/club-memberships', { cookie: studentCookie })).body[0].status, 'approved');
+
+  const peerApplication = await request(`/clubs/${clubId}/membership`, {
+    method: 'POST', cookie: peerCookie, body: { motivation: 'I hope to meet students with similar interests.' }
+  });
+  const declined = await request(`/club-memberships/${peerApplication.body.id}`, {
+    method: 'PATCH', cookie: coordinatorCookie, body: { status: 'declined' }
+  });
+  assert.equal(declined.body.status, 'declined');
+  const resubmitted = await request(`/clubs/${clubId}/membership`, {
+    method: 'POST', cookie: peerCookie, body: { motivation: 'I would like to apply again and take part.' }
+  });
+  assert.equal(resubmitted.status, 201);
+  assert.equal(resubmitted.body.id, peerApplication.body.id);
+  assert.equal(resubmitted.body.status, 'pending');
+});
+
+test('student directory only lists opted-in peers and lets students control visibility', async () => {
+  assert.equal((await request('/student-directory')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const peerLogin = await request('/auth/login', { method: 'POST', body: { role: 'student', email: 'peer@example.test', password } });
+  const trainerLogin = await request('/auth/demo', { method: 'POST', body: { role: 'trainer' } });
+  const studentCookie = studentLogin.cookie;
+  const peerCookie = peerLogin.cookie;
+
+  assert.equal((await request('/student-directory', { cookie: trainerLogin.cookie })).status, 403);
+  assert.equal((await request('/student-directory/visibility', {
+    method: 'PATCH', cookie: studentCookie, body: { visible: 'yes' }
+  })).status, 400);
+  const peerOptIn = await request('/student-directory/visibility', {
+    method: 'PATCH', cookie: peerCookie, body: { visible: true }
+  });
+  assert.equal(peerOptIn.status, 200);
+  assert.equal(peerOptIn.body.visible, true);
+
+  const directory = await request('/student-directory', { cookie: studentCookie });
+  assert.equal(directory.status, 200);
+  assert.equal(directory.body.visible, false);
+  assert.deepEqual(directory.body.students.map((person) => person.id), ['u-other-student']);
+  assert.equal('email' in directory.body.students[0], false);
+  assert.equal('password_hash' in directory.body.students[0], false);
+
+  assert.equal((await request('/student-directory/visibility', {
+    method: 'PATCH', cookie: studentCookie, body: { visible: true }
+  })).body.visible, true);
+  const peerDirectory = await request('/student-directory', { cookie: peerCookie });
+  assert.equal(peerDirectory.body.visible, true);
+  assert.deepEqual(peerDirectory.body.students.map((person) => person.id), ['u-student']);
+
+  assert.equal((await request('/student-directory/visibility', {
+    method: 'PATCH', cookie: peerCookie, body: { visible: false }
+  })).body.visible, false);
+  assert.deepEqual((await request('/student-directory', { cookie: studentCookie })).body.students, []);
+});
+
+test('room bookings prevent double booking and restrict cancellation to the owner', async () => {
+  assert.equal((await request('/room-bookings?date=2026-11-12')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const peerLogin = await request('/auth/login', { method: 'POST', body: { role: 'student', email: 'peer@example.test', password } });
+  const studentCookie = studentLogin.cookie;
+  const peerCookie = peerLogin.cookie;
+  const bookingDate = new Date();
+  bookingDate.setDate(bookingDate.getDate() + 1);
+  while (bookingDate.getDay() === 0) bookingDate.setDate(bookingDate.getDate() + 1);
+  const date = `${bookingDate.getFullYear()}-${String(bookingDate.getMonth() + 1).padStart(2, '0')}-${String(bookingDate.getDate()).padStart(2, '0')}`;
+  const bookingInput = { roomId: 'innovation-lab', date, slot: '19:00', purpose: 'Student project session' };
+
+  assert.equal((await request('/room-bookings?date=2026-02-31', { cookie: studentCookie })).status, 400);
+  assert.equal((await request('/room-bookings', {
+    method: 'POST', cookie: studentCookie, body: { ...bookingInput, slot: '19:30' }
+  })).status, 400);
+  const created = await request('/room-bookings', { method: 'POST', cookie: studentCookie, body: bookingInput });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.room_name, 'Innovation Lab');
+  assert.equal(created.body.ends_slot, '20:00');
+  assert.equal(created.body.created_by_me, true);
+  assert.equal('user_id' in created.body, false);
+
+  const schedule = await request(`/room-bookings?date=${date}`, { cookie: peerCookie });
+  assert.equal(schedule.body.length, 1);
+  assert.equal(schedule.body[0].created_by_me, false);
+  assert.equal((await request('/room-bookings', { method: 'POST', cookie: peerCookie, body: bookingInput })).status, 409);
+  assert.equal((await request(`/room-bookings/${created.body.id}`, {
+    method: 'DELETE', cookie: peerCookie
+  })).status, 403);
+  assert.equal((await request(`/room-bookings/${created.body.id}`, {
+    method: 'DELETE', cookie: studentCookie
+  })).status, 200);
+
+  const replacement = await request('/room-bookings', { method: 'POST', cookie: peerCookie, body: bookingInput });
+  assert.equal(replacement.status, 201);
+  assert.equal(replacement.body.created_by_me, true);
+});
+
+test('library catalogue requires sign-in and searches sample titles and subjects', async () => {
+  assert.equal((await request('/library-catalog')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const cookie = studentLogin.cookie;
+  const catalogue = await request('/library-catalog', { cookie });
+  assert.equal(catalogue.status, 200);
+  assert.equal(catalogue.body.length, 8);
+  assert.ok(catalogue.body.every((book) => book.title && book.author && book.isbn && book.shelf));
+  assert.equal(catalogue.body.some((book) => book.available_copies === 0), true);
+  assert.deepEqual((await request('/library-catalog?q=robotics', { cookie })).body.map((book) => book.id), ['book-robotics']);
+  assert.deepEqual((await request('/library-catalog?q=BUSINESS', { cookie })).body.map((book) => book.id), ['book-business-basics', 'book-marketing']);
+  assert.equal((await request(`/library-catalog?q=${'x'.repeat(101)}`, { cookie })).status, 400);
+});
+
+test('library seat bookings prevent conflicts and restrict cancellation', async () => {
+  assert.equal((await request('/library-seat-bookings?date=2026-11-12')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const peerLogin = await request('/auth/login', { method: 'POST', body: { role: 'student', email: 'peer@example.test', password } });
+  const studentCookie = studentLogin.cookie;
+  const peerCookie = peerLogin.cookie;
+  const bookingDate = new Date();
+  bookingDate.setDate(bookingDate.getDate() + 1);
+  while (bookingDate.getDay() === 0) bookingDate.setDate(bookingDate.getDate() + 1);
+  const date = `${bookingDate.getFullYear()}-${String(bookingDate.getMonth() + 1).padStart(2, '0')}-${String(bookingDate.getDate()).padStart(2, '0')}`;
+  const bookingInput = { seatId: 'quiet-01', date, slot: '18:00' };
+  assert.equal((await request('/library-seat-bookings', {
+    method: 'POST', cookie: studentCookie, body: { ...bookingInput, slot: '18:30' }
+  })).status, 400);
+  assert.equal((await request('/library-seat-bookings', {
+    method: 'POST', cookie: studentCookie, body: { ...bookingInput, seatId: 'unknown-seat' }
+  })).status, 400);
+  const created = await request('/library-seat-bookings', { method: 'POST', cookie: studentCookie, body: bookingInput });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.seat_name, 'Quiet desk 01');
+  assert.equal(created.body.ends_slot, '19:00');
+  assert.equal(created.body.created_by_me, true);
+  assert.equal('user_id' in created.body, false);
+
+  const schedule = await request(`/library-seat-bookings?date=${date}`, { cookie: peerCookie });
+  assert.equal(schedule.body.length, 1);
+  assert.equal(schedule.body[0].created_by_me, false);
+  assert.equal((await request('/library-seat-bookings', { method: 'POST', cookie: peerCookie, body: bookingInput })).status, 409);
+  assert.equal((await request(`/library-seat-bookings/${created.body.id}`, {
+    method: 'DELETE', cookie: peerCookie
+  })).status, 403);
+  assert.equal((await request(`/library-seat-bookings/${created.body.id}`, {
+    method: 'DELETE', cookie: studentCookie
+  })).status, 200);
+  assert.equal((await request('/library-seat-bookings', {
+    method: 'POST', cookie: peerCookie, body: bookingInput
+  })).status, 201);
+});
+
+test('course reviews allow students to submit and update one anonymous review per course', async () => {
+  assert.equal((await request('/course-reviews')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const peerLogin = await request('/auth/login', { method: 'POST', body: { role: 'student', email: 'peer@example.test', password } });
+  const trainerLogin = await request('/auth/demo', { method: 'POST', body: { role: 'trainer' } });
+  const studentCookie = studentLogin.cookie;
+  const peerCookie = peerLogin.cookie;
+  const trainerCookie = trainerLogin.cookie;
+  const initial = await request('/course-reviews', { cookie: studentCookie });
+  assert.equal(initial.status, 200);
+  assert.ok(initial.body.some((course) => course.id === 'c-product'));
+  assert.equal((await request('/course-reviews', {
+    method: 'POST', cookie: trainerCookie, body: { courseId: 'c-product', rating: 5, comment: 'Really enjoyed this course.' }
+  })).status, 403);
+  assert.equal((await request('/course-reviews', {
+    method: 'POST', cookie: studentCookie, body: { courseId: 'c-product', rating: 6, comment: 'Really enjoyed this course.' }
+  })).status, 400);
+  assert.equal((await request('/course-reviews', {
+    method: 'POST', cookie: studentCookie, body: { courseId: 'missing-course', rating: 5, comment: 'Really enjoyed this course.' }
+  })).status, 404);
+  const first = await request('/course-reviews', {
+    method: 'POST', cookie: studentCookie, body: { courseId: 'c-product', rating: 4, comment: 'Clear lessons and useful project work.' }
+  });
+  assert.equal(first.status, 200);
+  const second = await request('/course-reviews', {
+    method: 'POST', cookie: studentCookie, body: { courseId: 'c-product', rating: 5, comment: 'Excellent material and helpful examples.' }
+  });
+  assert.equal(second.status, 200);
+  assert.equal(second.body.id, first.body.id);
+  const peerReview = await request('/course-reviews', {
+    method: 'POST', cookie: peerCookie, body: { courseId: 'c-product', rating: 3, comment: 'Good introduction to the topic.' }
+  });
+  assert.equal(peerReview.status, 200);
+  const updated = await request('/course-reviews', { cookie: studentCookie });
+  const courseReview = updated.body.find((course) => course.id === 'c-product');
+  assert.equal(courseReview.review_count, 2);
+  assert.equal(courseReview.average_rating, 4);
+  assert.equal(courseReview.my_review.rating, 5);
+  assert.equal(courseReview.reviews.length, 2);
+  assert.ok(courseReview.reviews.every((review) => !('user_id' in review)));
+});
+
+test('campus transport routes are visible to signed-in users and updates are staff-managed', async () => {
+  assert.equal((await request('/transport/updates')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const coordinatorLogin = await request('/auth/demo', { method: 'POST', body: { role: 'coordinator' } });
+  const studentCookie = studentLogin.cookie;
+  const coordinatorCookie = coordinatorLogin.cookie;
+  const initial = await request('/transport/updates', { cookie: studentCookie });
+  assert.equal(initial.status, 200);
+  assert.deepEqual(initial.body.routes.map((route) => route.id), ['north-route', 'east-route', 'campus-loop']);
+  assert.ok(initial.body.routes.every((route) => route.stops.length > 0));
+  const input = { routeId: 'north-route', type: 'delay', message: 'North route is running 15 minutes late.' };
+  assert.equal((await request('/transport/updates', { method: 'POST', cookie: studentCookie, body: input })).status, 403);
+  assert.equal((await request('/transport/updates', {
+    method: 'POST', cookie: coordinatorCookie, body: { ...input, routeId: 'unknown-route' }
+  })).status, 400);
+  assert.equal((await request('/transport/updates', {
+    method: 'POST', cookie: coordinatorCookie, body: { ...input, message: 'late' }
+  })).status, 400);
+  const created = await request('/transport/updates', { method: 'POST', cookie: coordinatorCookie, body: input });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.route_name, 'North Gate Shuttle');
+  assert.equal('created_by' in created.body, false);
+  const visible = await request('/transport/updates', { cookie: studentCookie });
+  assert.equal(visible.body.updates.length, 1);
+  assert.equal(visible.body.updates[0].message, input.message);
+  assert.equal((await request(`/transport/updates/${created.body.id}`, {
+    method: 'PATCH', cookie: studentCookie, body: { status: 'resolved' }
+  })).status, 403);
+  assert.equal((await request(`/transport/updates/${created.body.id}`, {
+    method: 'PATCH', cookie: coordinatorCookie, body: { status: 'invalid' }
+  })).status, 400);
+  assert.equal((await request(`/transport/updates/${created.body.id}`, {
+    method: 'PATCH', cookie: coordinatorCookie, body: { status: 'resolved' }
+  })).status, 200);
+  assert.deepEqual((await request('/transport/updates', { cookie: studentCookie })).body.updates, []);
+});
+
+test('canteen menu requires sign-in and returns daily meal and dietary information', async () => {
+  assert.equal((await request('/canteen/menu?day=Monday')).status, 401);
+  const studentLogin = await request('/auth/demo', { method: 'POST', body: { role: 'student' } });
+  const cookie = studentLogin.cookie;
+  const monday = await request('/canteen/menu?day=Monday', { cookie });
+  assert.equal(monday.status, 200);
+  assert.equal(monday.body.day, 'Monday');
+  assert.equal(monday.body.meals.length, 4);
+  assert.ok(monday.body.meals.every((meal) => meal.name && meal.price > 0 && meal.serving_time));
+  assert.ok(monday.body.meals.some((meal) => meal.vegetarian));
+  assert.ok(monday.body.meals.some((meal) => !meal.vegetarian));
+  assert.equal((await request('/canteen/menu?day=Sunday', { cookie })).status, 400);
 });
