@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^13.0.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
@@ -40,5 +39,8 @@
     "@vitejs/plugin-react": "^5.0.2",
     "concurrently": "^9.2.1",
     "vite": "^7.1.7"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^13.0.3"
   }
 }

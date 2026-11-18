@@ -25,7 +25,7 @@ The first `npm run dev` generates a random, persistent local `SESSION_SECRET` in
 
 To stop the local app, press **Ctrl+C** in the terminal running `npm run dev`; this stops both the API and frontend. MongoDB runs separately as a Windows service or Docker container, so stopping/restarting the app does not erase saved records. To check the Windows service, use `Get-Service MongoDB`; start or stop it from an elevated PowerShell only when needed. Keep the same `MONGODB_URI` and `MONGODB_DATABASE` in `.env` when restarting.
 
-The development server, production server, account tools, and tests all use the MongoDB backend. The older SQLite prototype is not used by `npm run dev` or `npm start`; its separate database does not contain MongoDB demo accounts.
+The development server, production server, account tools, and tests all use the MongoDB backend. The older SQLite prototype is not used by `npm run dev` or `npm start`; its optional `better-sqlite3` native module may require local build tools, and its separate database does not contain MongoDB demo accounts.
 
 The local MongoDB database is initialized with indexed collections and non-destructive sample records on first startup. `npm run seed` can initialize a blank development database. Sample records use fictional `.example.test` identities; do not use real student information for the assignment demo.
 
