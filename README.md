@@ -6,7 +6,7 @@ A role-aware, responsive full-stack learning hub built as a Day 17 project. The 
 
 ## Run it locally
 
-Requirements: Node.js 20.19+ or 22.12+, npm, and Windows PowerShell.
+Requirements: Node.js 22.12+, npm, and Windows PowerShell.
 
 ```powershell
 npm install
